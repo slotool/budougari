@@ -60,6 +60,19 @@ jobs:
           sqlite3.connect(db).execute('pragma schema_version').fetchone()
           PY
 
+      - name: Refresh latest min-repo reports
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          config = json.loads(Path('config.json').read_text(encoding='utf-8'))
+          config['request_delay_seconds'] = float(os.environ['DELAY_SECONDS'])
+          config['detail_pages_per_target'] = 1
+          Path('config.grape.json').write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
+          PY
+          python minrepo_collect.py --config config.grape.json
+
       - name: Repair inferred report dates
         run: python repair_report_dates.py
 
