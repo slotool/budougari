@@ -1,4 +1,5 @@
 import argparse
+import csv
 import datetime as dt
 from pathlib import Path
 import re
@@ -133,15 +134,15 @@ def parse_machine_bonus_rows(page_html):
     return bonus_rows
 
 
-def available_date(conn, target_date, hall=None):
+def available_dates(conn, target_date, hall=None):
     params = [target_date.isoformat()]
     hall_filter = ""
     if hall:
         hall_filter = " and dr.hall_name = ?"
         params.append(hall)
-    row = conn.execute(
+    rows = conn.execute(
         f"""
-        select max(mr.report_date)
+        select dr.hall_name, max(mr.report_date) as report_date
           from machine_reports mr
           join daily_reports dr
             on dr.hall_key = mr.hall_key
@@ -150,10 +151,12 @@ def available_date(conn, target_date, hall=None):
            and mr.report_date <= ?
            and instr(mr.machine_name, 'ジャグラー') > 0
            {hall_filter}
+         group by dr.hall_name
+         order by dr.hall_name
         """,
         params,
-    ).fetchone()
-    return dt.date.fromisoformat(row[0]) if row and row[0] else target_date
+    ).fetchall()
+    return [(row["hall_name"], dt.date.fromisoformat(row["report_date"])) for row in rows]
 
 
 def target_machines(conn, report_date, hall=None, limit=None, missing_only=True):
@@ -247,43 +250,65 @@ def save_bonus_rows(conn, machine, bonus_rows, collected_at):
     return count
 
 
+def export_bonus_csv(conn, csv_dir="exports"):
+    csv_path = Path(csv_dir)
+    csv_path.mkdir(parents=True, exist_ok=True)
+    cursor = conn.execute("select * from unit_bonus_reports order by hall_name, report_date, machine_name, unit_no")
+    columns = [description[0] for description in cursor.description]
+    with (csv_path / "unit_bonus_reports.csv").open("w", newline="", encoding="utf-8-sig") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(columns)
+        writer.writerows(cursor.fetchall())
+
+
 def collect(target_date, hall=None, limit=None, delay=8.0, missing_only=True, dry_run=False):
     conn = sqlite3.connect("data/minrepo.sqlite")
     conn.row_factory = sqlite3.Row
     init_db(conn)
-    report_date = available_date(conn, target_date, hall)
-    machines = target_machines(conn, report_date, hall, limit, missing_only)
+    targets = available_dates(conn, target_date, hall)
+    machine_targets = []
+    for hall_name, report_date in targets:
+        machines = target_machines(conn, report_date, hall_name, limit, missing_only)
+        machine_targets.append((hall_name, report_date, machines))
     if dry_run:
-        for machine in machines:
-            print(
-                f"{machine['report_date']} {machine['hall_name']} {machine['machine_name']} "
-                f"{machine['bonus_unit_count']}/{machine['unit_count']}"
-            )
-        print(f"would check machine pages={len(machines)}, for {report_date.isoformat()}")
+        total = 0
+        for hall_name, report_date, machines in machine_targets:
+            for machine in machines:
+                print(
+                    f"{machine['report_date']} {machine['hall_name']} {machine['machine_name']} "
+                    f"{machine['bonus_unit_count']}/{machine['unit_count']}"
+                )
+            total += len(machines)
+            print(f"would check {len(machines)} machine pages for {hall_name} {report_date.isoformat()}")
+        print(f"would check machine pages={total}")
         conn.close()
         return
     collected_at = dt.datetime.now().isoformat(timespec="seconds")
     count = 0
     checked = 0
     d2_cookie = None
-    for machine in machines:
-        url = f"https://min-repo.com/{machine['report_id']}/?kishu={quote(machine['machine_name'])}"
-        html = fetch_with_d2(url, d2_cookie)
-        if not d2_cookie:
-            d2_cookie = extract_cookie(html, "_d2")
-            if d2_cookie:
-                time.sleep(delay)
-                html = fetch_with_d2(url, d2_cookie)
-        debug_dir = Path("data/raw/machine_pages") / machine["report_date"]
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        debug_path = debug_dir / f"{machine['report_id']}_{machine['unit_count']}_{machine['machine_name']}.html"
-        debug_path.write_text(html, encoding="utf-8")
-        checked += 1
-        count += save_bonus_rows(conn, machine, parse_machine_bonus_rows(html), collected_at)
-        conn.commit()
-        time.sleep(delay)
+    for hall_name, report_date, machines in machine_targets:
+        print(f"checking {hall_name} {report_date.isoformat()} machine pages={len(machines)}")
+        for machine in machines:
+            url = f"https://min-repo.com/{machine['report_id']}/?kishu={quote(machine['machine_name'])}"
+            html = fetch_with_d2(url, d2_cookie)
+            if not d2_cookie:
+                d2_cookie = extract_cookie(html, "_d2")
+                if d2_cookie:
+                    time.sleep(delay)
+                    html = fetch_with_d2(url, d2_cookie)
+            debug_dir = Path("data/raw/machine_pages") / machine["report_date"]
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            debug_path = debug_dir / f"{machine['report_id']}_{machine['unit_count']}_{machine['machine_name']}.html"
+            debug_path.write_text(html, encoding="utf-8")
+            checked += 1
+            count += save_bonus_rows(conn, machine, parse_machine_bonus_rows(html), collected_at)
+            conn.commit()
+            time.sleep(delay)
+    collector.export_csv(conn, "exports")
+    export_bonus_csv(conn, "exports")
     conn.close()
-    print(f"checked machine pages={checked}, collected bonus rows={count} for {report_date.isoformat()}")
+    print(f"checked machine pages={checked}, collected bonus rows={count}")
 
 
 def main():
