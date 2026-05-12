@@ -53,6 +53,12 @@ jobs:
           fi
           echo "DELAY_SECONDS=${{ inputs.delay_seconds }}" >> "$GITHUB_ENV"
 
+      - name: Remove invalid SQLite file
+        run: |
+          python -c "import pathlib, sqlite3; p=pathlib.Path('data/minrepo.sqlite'); ok=True; \
+          (p.exists() and sqlite3.connect(p).execute('pragma schema_version').fetchone()) or None" \
+          || rm -f data/minrepo.sqlite
+
       - name: Collect latest hall data
         if: ${{ inputs.collect_latest }}
         run: python minrepo_collect.py
