@@ -1,0 +1,92 @@
+name: grape estimate only
+
+on:
+  workflow_dispatch:
+    inputs:
+      report_date:
+        description: "Target date, blank = today in Japan; latest published date is used per hall"
+        required: false
+        default: ""
+      collect_bonus:
+        description: "Fetch missing Juggler BB/RB pages only"
+        type: boolean
+        required: true
+        default: true
+      delay_seconds:
+        description: "Delay between min-repo requests"
+        required: true
+        default: "15"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: grape-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Tokyo
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Resolve target date
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.report_date }}" ]; then
+            echo "TARGET_DATE=${{ inputs.report_date }}" >> "$GITHUB_ENV"
+          else
+            echo "TARGET_DATE=$(date +%F)" >> "$GITHUB_ENV"
+          fi
+          echo "DELAY_SECONDS=${{ inputs.delay_seconds }}" >> "$GITHUB_ENV"
+
+      - name: Check existing database
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import sqlite3
+          db = Path('data/minrepo.sqlite')
+          if not db.exists():
+              raise SystemExit('data/minrepo.sqlite がありません。先に minrepo reports を1回実行してください。')
+          sqlite3.connect(db).execute('pragma schema_version').fetchone()
+          PY
+
+      - name: Repair inferred report dates
+        run: python repair_report_dates.py
+
+      - name: Collect missing Juggler BB/RB and negative diff pages
+        if: ${{ inputs.collect_bonus }}
+        run: python collect_bonus_details.py --date "$TARGET_DATE" --delay "$DELAY_SECONDS"
+
+      - name: Repair dates after bonus collection
+        run: python repair_report_dates.py
+
+      - name: Build grape estimate page
+        run: |
+          python estimate_grapes.py --date "$TARGET_DATE" --out reports/grape_estimates.md
+          python build_site.py
+
+      - name: Commit updated grape data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/minrepo.sqlite exports reports/grape_estimates.md
+          git diff --cached --quiet || git commit -m "Update grape estimates"
+          git push
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@v4
