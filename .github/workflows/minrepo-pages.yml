@@ -36,6 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TZ: Asia/Tokyo
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
 
@@ -55,13 +56,16 @@ jobs:
 
       - name: Remove invalid SQLite file
         run: |
-          python -c "import pathlib, sqlite3; p=pathlib.Path('data/minrepo.sqlite'); ok=True; \
-          (p.exists() and sqlite3.connect(p).execute('pragma schema_version').fetchone()) or None" \
-          || rm -f data/minrepo.sqlite
+          if [ -f data/minrepo.sqlite ]; then
+            python -c "import sqlite3; sqlite3.connect('data/minrepo.sqlite').execute('pragma schema_version').fetchone()" || rm -f data/minrepo.sqlite
+          fi
 
       - name: Collect latest hall data
         if: ${{ inputs.collect_latest }}
         run: python minrepo_collect.py
+
+      - name: Repair inferred report dates
+        run: python repair_report_dates.py
 
       - name: Collect event sample pages
         if: ${{ inputs.collect_latest }}
