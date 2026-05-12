@@ -13,7 +13,7 @@ on:
         required: true
         default: true
       collect_bonus:
-        description: "Fetch Juggler BB/RB and negative diff machine pages"
+        description: "Fetch missing Juggler BB/RB and diff machine pages"
         type: boolean
         required: true
         default: true
@@ -73,9 +73,9 @@ jobs:
           python collect_event_details.py --hall パーラーゾーン姪浜 --ones 3,6,9 --weekdays 土,日 --limit-per-group 4
           python collect_event_details.py --hall アウトバーンブリッツ --ones 4,8 --limit-per-group 4
 
-      - name: Collect Juggler BB/RB and negative diff pages
+      - name: Collect missing Juggler BB/RB and negative diff pages
         if: ${{ inputs.collect_bonus }}
-        run: python collect_bonus_details.py --date "$TARGET_DATE" --include-complete --delay "$DELAY_SECONDS"
+        run: python collect_bonus_details.py --date "$TARGET_DATE" --delay "$DELAY_SECONDS"
 
       - name: Build reports
         run: |
