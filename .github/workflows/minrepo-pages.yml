@@ -73,9 +73,15 @@ jobs:
           python collect_event_details.py --hall パーラーゾーン姪浜 --ones 3,6,9 --weekdays 土,日 --limit-per-group 4
           python collect_event_details.py --hall アウトバーンブリッツ --ones 4,8 --limit-per-group 4
 
+      - name: Repair dates after detail collection
+        run: python repair_report_dates.py
+
       - name: Collect missing Juggler BB/RB and negative diff pages
         if: ${{ inputs.collect_bonus }}
         run: python collect_bonus_details.py --date "$TARGET_DATE" --delay "$DELAY_SECONDS"
+
+      - name: Repair dates after bonus collection
+        run: python repair_report_dates.py
 
       - name: Build reports
         run: |
