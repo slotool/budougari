@@ -12,6 +12,29 @@ TABLES = [
 ]
 
 WEEKDAYS = "月火水木金土日"
+WEEKDAY_INDEX = {"月": 0, "火": 1, "水": 2, "木": 3, "金": 4, "土": 5, "日": 6}
+
+
+def infer_report_date(month, day, collected_on, weekday=None):
+    candidates = []
+    for year in range(collected_on.year, collected_on.year - 4, -1):
+        try:
+            candidate = dt.date(year, month, day)
+        except ValueError:
+            continue
+        if candidate > collected_on:
+            continue
+        if weekday in WEEKDAY_INDEX and candidate.weekday() != WEEKDAY_INDEX[weekday]:
+            continue
+        candidates.append(candidate)
+    if candidates:
+        return max(candidates)
+
+    year = collected_on.year
+    candidate = dt.date(year, month, day)
+    if candidate > collected_on:
+        candidate = dt.date(year - 1, month, day)
+    return candidate
 
 
 def table_exists(conn, name):
@@ -35,7 +58,7 @@ def repair_dates(db_path="data/minrepo.sqlite"):
     ).fetchall()
     for row in rows:
         current = dt.date.fromisoformat(row["report_date"])
-        expected = collector.infer_report_date(current.month, current.day, dt.date.today(), row["weekday"])
+        expected = infer_report_date(current.month, current.day, dt.date.today(), row["weekday"])
         if expected == current:
             continue
         new_date = expected.isoformat()
