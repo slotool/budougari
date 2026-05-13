@@ -43,6 +43,7 @@ def load_rows(conn, hall_name):
            and mr.category = 'unit'
            and mr.machine_name like '%ジャグラー%'
            and mr.unit_no is not null
+           and mr.avg_diff is not null
          order by mr.report_date, mr.unit_no
         """,
         (hall_name,),
@@ -57,15 +58,17 @@ def summarize_group(rows, key_func):
 
     result = []
     for key, items in groups.items():
-        diffs = [row["avg_diff"] or 0 for row in items]
-        games = [row["avg_game"] or 0 for row in items]
+        diffs = [row["avg_diff"] for row in items if row["avg_diff"] is not None]
+        games = [row["avg_game"] for row in items if row["avg_game"] is not None]
+        if not diffs:
+            continue
         result.append(
             {
                 "key": key,
                 "units": len(items),
                 "days": len({row["report_date"] for row in items}),
                 "avg_diff": sum(diffs) / len(diffs),
-                "avg_game": sum(games) / len(games),
+                "avg_game": sum(games) / len(games) if games else None,
                 "positive_rate": sum(1 for value in diffs if value > 0) / len(diffs) * 100,
                 "big_win_rate": sum(1 for value in diffs if value >= 1000) / len(diffs) * 100,
                 "big_loss_rate": sum(1 for value in diffs if value <= -1000) / len(diffs) * 100,
@@ -119,15 +122,18 @@ def summarize_bucket_rows(buckets):
         if not items:
             result.append({"key": key, "units": 0, "avg_diff": None, "positive_rate": None, "avg_game": None})
             continue
-        diffs = [row["avg_diff"] or 0 for row in items]
-        games = [row["avg_game"] or 0 for row in items]
+        diffs = [row["avg_diff"] for row in items if row["avg_diff"] is not None]
+        games = [row["avg_game"] for row in items if row["avg_game"] is not None]
+        if not diffs:
+            result.append({"key": key, "units": len(items), "avg_diff": None, "positive_rate": None, "avg_game": None})
+            continue
         result.append(
             {
                 "key": key,
                 "units": len(items),
                 "avg_diff": sum(diffs) / len(diffs),
                 "positive_rate": sum(1 for value in diffs if value > 0) / len(diffs) * 100,
-                "avg_game": sum(games) / len(games),
+                "avg_game": sum(games) / len(games) if games else None,
             }
         )
     return result
@@ -176,6 +182,9 @@ def write_report(hall_name, output_path):
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
 
+    dates = sorted({row["report_date"] for row in rows})
+    first_date = dates[0] if dates else "-"
+    last_date = dates[-1] if dates else "-"
     by_event = summarize_group(rows, lambda row: event_label(row["report_date"], row["event_type"]))
     by_weekday = summarize_group(rows, lambda row: weekday_jp(row["report_date"]))
     by_machine_event = summarize_group(
@@ -195,7 +204,11 @@ def write_report(hall_name, output_path):
         "# ジャグラー傾向検証",
         "",
         f"対象店舗: {hall_name}",
-        f"対象レコード数: {len(rows)}",
+        f"対象期間: {first_date} - {last_date}",
+        f"対象日数: {len(dates)}",
+        f"対象台データ数: {len(rows)}",
+        "",
+        "注: このレポートは全台詳細または機種詳細で台別差枚が取れている日だけを母数にしています。日数が少ない行は参考値です。",
         "",
         "## イベント種別別",
         "",
