@@ -33,8 +33,8 @@ def build_report(db_path, output_path):
                min(report_date) first_date, max(report_date) last_date,
                avg(avg_diff) avg_of_avg_diff,
                avg(avg_game) avg_game,
-               sum(case when total_diff is not null then 1 else 0 end) known_days,
-               sum(case when total_diff > 0 then 1 else 0 end) positive_days
+               sum(case when coalesce(total_diff, avg_diff) is not null then 1 else 0 end) known_days,
+               sum(case when coalesce(total_diff, avg_diff) > 0 then 1 else 0 end) positive_days
         from daily_reports
         group by hall_key, hall_name
         order by hall_name
@@ -44,7 +44,9 @@ def build_report(db_path, output_path):
     recent = query(
         conn,
         """
-        select hall_name, report_date, weekday, event_type, total_diff, avg_diff, avg_game, featured
+        select hall_name, report_date, weekday, event_type,
+               coalesce(total_diff, avg_diff) as display_total_diff,
+               total_diff, avg_diff, avg_game, featured
         from daily_reports
         order by report_date desc, hall_name
         limit 20
@@ -55,8 +57,8 @@ def build_report(db_path, output_path):
         conn,
         """
         select hall_name, weekday, count(*) days, avg(avg_diff) avg_diff, avg(avg_game) avg_game,
-               sum(case when total_diff is not null then 1 else 0 end) known_days,
-               sum(case when total_diff > 0 then 1 else 0 end) positive_days
+               sum(case when coalesce(total_diff, avg_diff) is not null then 1 else 0 end) known_days,
+               sum(case when coalesce(total_diff, avg_diff) > 0 then 1 else 0 end) positive_days
         from daily_reports
         where avg_diff is not null
         group by hall_name, weekday
@@ -69,11 +71,11 @@ def build_report(db_path, output_path):
         conn,
         """
         select hall_name, event_type, count(*) days,
-               sum(case when total_diff is not null then 1 else 0 end) known_days,
-               sum(case when total_diff > 0 then 1 else 0 end) positive_days,
+               sum(case when coalesce(total_diff, avg_diff) is not null then 1 else 0 end) known_days,
+               sum(case when coalesce(total_diff, avg_diff) > 0 then 1 else 0 end) positive_days,
                avg(avg_diff) avg_diff,
                avg(avg_game) avg_game,
-               avg(total_diff) avg_total_diff
+               avg(coalesce(total_diff, avg_diff)) avg_total_diff
         from daily_reports
         where event_type is not null
         group by hall_name, event_type
@@ -149,7 +151,7 @@ def build_report(db_path, output_path):
         event = f" [{row['event_type']}]" if row["event_type"] else ""
         featured = " / ".join([x for x in (row["featured"] or "").splitlines()[:3]])
         lines.append(
-            f"| {row['hall_name']} | {row['report_date']}({row['weekday']}){event} | {fmt_int(row['total_diff'])} | "
+            f"| {row['hall_name']} | {row['report_date']}({row['weekday']}){event} | {fmt_int(row['display_total_diff'])} | "
             f"{fmt_int(row['avg_diff'])} | {fmt_int(row['avg_game'])} | {featured} |"
         )
 
