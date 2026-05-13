@@ -76,6 +76,10 @@ jobs:
       - name: Repair inferred report dates
         run: python repair_report_dates.py
 
+      - name: Collect latest all-unit pages
+        if: ${{ inputs.collect_latest }}
+        run: python collect_latest_details.py --config config.run.json
+
       - name: Collect event sample pages
         if: ${{ inputs.collect_latest }}
         run: |
