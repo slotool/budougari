@@ -248,8 +248,8 @@ def write_report(db_path, target_date, output_path, skill):
             [
                 "### 台番別ぶどう推定",
                 "",
-                "| 台番 | 推定ぶどう | 判定 | 機種 | G数 | 差枚 | BB/RB | 差枚元 |",
-                "|---:|---:|---|---|---:|---:|---:|---|",
+                "| 台番 | 推定ぶどう | 判定 | G数 | 差枚 | BB/RB | 差枚元 |",
+                "|---:|---:|---|---:|---:|---:|---|",
             ]
         )
         for machine_name, unit_rows in summarize_units_by_machine(rows, skill):
@@ -258,7 +258,7 @@ def write_report(db_path, target_date, output_path, skill):
                 bonus_text = f"BB {fmt_int(row['bb'])} / RB {fmt_int(row['rb'])}" if row["bb"] is not None else "未取得"
                 grape_text = f"1/{fmt_float(row['denom'])}" if row["denom"] is not None else "計算不可"
                 lines.append(
-                    f"| {row['unit_no']} | {grape_text} | {row['grade']} | {row['machine_name']} | "
+                    f"| {row['unit_no']} | {grape_text} | {row['grade']} | "
                     f"{fmt_int(row['avg_game'])} | {fmt_int(row['diff'])} | {bonus_text} | {diff_source_label(row['diff_source'])} |"
                 )
         lines.append("")
