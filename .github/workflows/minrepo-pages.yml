@@ -102,6 +102,7 @@ jobs:
 
       - name: Build reports
         run: |
+          python rebuild_daily_totals.py
           python backfill_events.py
           python analyze_minrepo.py
           python analyze_juggler_patterns.py
