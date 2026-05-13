@@ -94,6 +94,7 @@ def header_index(headers):
 
 
 def parse_machine_bonus_rows(page_html):
+    graph_diffs = parse_graph_diffs(page_html)
     bonus_rows = []
     for table in collector.parse_tables(page_html):
         rows = table["rows"]
@@ -111,6 +112,8 @@ def parse_machine_bonus_rows(page_html):
                 continue
             avg_game = collector.parse_int(row[indexes["avg_game"]]["text"]) if "avg_game" in indexes else None
             avg_diff = collector.parse_int(row[indexes["avg_diff"]]["text"]) if "avg_diff" in indexes else None
+            if avg_diff is None and unit_no in graph_diffs:
+                avg_diff = graph_diffs[unit_no]
             payout_rate = (
                 collector.parse_percent(row[indexes["payout_rate"]]["text"]) if "payout_rate" in indexes else None
             )
@@ -226,26 +229,27 @@ def save_bonus_rows(conn, machine, bonus_rows, collected_at):
                 collected_at,
             ),
         )
-        conn.execute(
-            """
-            update machine_reports
-               set avg_diff = ?,
-                   avg_game = coalesce(?, avg_game),
-                   payout_rate = ?,
-                   collected_at = ?
-             where report_id = ?
-               and category = 'unit'
-               and unit_no = ?
-            """,
-            (
-                bonus.get("avg_diff"),
-                bonus.get("avg_game"),
-                bonus.get("payout_rate"),
-                collected_at,
-                machine["report_id"],
-                bonus["unit_no"],
-            ),
-        )
+        if bonus.get("avg_diff") is not None or bonus.get("avg_game") is not None or bonus.get("payout_rate") is not None:
+            conn.execute(
+                """
+                update machine_reports
+                   set avg_diff = coalesce(?, avg_diff),
+                       avg_game = coalesce(?, avg_game),
+                       payout_rate = coalesce(?, payout_rate),
+                       collected_at = ?
+                 where report_id = ?
+                   and category = 'unit'
+                   and unit_no = ?
+                """,
+                (
+                    bonus.get("avg_diff"),
+                    bonus.get("avg_game"),
+                    bonus.get("payout_rate"),
+                    collected_at,
+                    machine["report_id"],
+                    bonus["unit_no"],
+                ),
+            )
         count += 1
     return count
 
