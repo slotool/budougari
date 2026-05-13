@@ -62,7 +62,16 @@ jobs:
 
       - name: Collect latest hall data
         if: ${{ inputs.collect_latest }}
-        run: python minrepo_collect.py
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          config = json.loads(Path('config.json').read_text(encoding='utf-8'))
+          config['request_delay_seconds'] = float(os.environ['DELAY_SECONDS'])
+          Path('config.run.json').write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
+          PY
+          python minrepo_collect.py --config config.run.json
 
       - name: Repair inferred report dates
         run: python repair_report_dates.py
