@@ -63,10 +63,11 @@ def main():
     collected_on = dt.date.today()
     delay = float(config.get("request_delay_seconds", 1.0))
     count = 0
+    d2_cookie = None
 
     for row in selected:
         report = dict(row)
-        detail_html = collector.fetch(report["report_url"])
+        detail_html, d2_cookie = collector.fetch_with_d2(report["report_url"], d2_cookie, delay)
         detail_raw_path = collector.save_raw(
             config["raw_dir"], collected_on, hall_id, report["report_id"], detail_html
         )
@@ -75,12 +76,13 @@ def main():
 
         time.sleep(delay)
         all_url = report["report_url"].rstrip("/") + "/?kishu=all&sort=num"
-        all_html = collector.fetch(all_url)
+        all_html, d2_cookie = collector.fetch_with_d2(all_url, d2_cookie, delay)
         all_raw_path = collector.save_raw(
             config["raw_dir"], collected_on, hall_id, f"{report['report_id']}_all", all_html
         )
         _, unit_records = collector.parse_detail_page(all_html, report, row_category="unit")
         collector.save_detail(conn, hall_id, report, {}, unit_records, collected_at, all_raw_path)
+        collector.update_daily_from_units(conn, hall_id, report, unit_records, collected_at)
         conn.commit()
         count += 1
         time.sleep(delay)
