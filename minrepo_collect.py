@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 
 USER_AGENT = "Mozilla/5.0"
+WEEKDAY_INDEX = {"月": 0, "火": 1, "水": 2, "木": 3, "金": 4, "土": 5, "日": 6}
 
 
 def clean_text(value, preserve_newlines=False):
@@ -129,11 +130,24 @@ def parse_tables(page_html):
     return parser.tables
 
 
-def infer_report_date(month, day, collected_on):
-    year = collected_on.year
-    candidate = dt.date(year, month, day)
+def infer_report_date(month, day, collected_on, weekday=None):
+    candidates = []
+    for year in range(collected_on.year, collected_on.year - 4, -1):
+        try:
+            candidate = dt.date(year, month, day)
+        except ValueError:
+            continue
+        if candidate > collected_on:
+            continue
+        if weekday in WEEKDAY_INDEX and candidate.weekday() != WEEKDAY_INDEX[weekday]:
+            continue
+        candidates.append(candidate)
+    if candidates:
+        return max(candidates)
+
+    candidate = dt.date(collected_on.year, month, day)
     if candidate > collected_on:
-        candidate = dt.date(year - 1, month, day)
+        candidate = dt.date(collected_on.year - 1, month, day)
     return candidate
 
 
@@ -167,7 +181,7 @@ def parse_daily_table(page_html, base_url, hall_name, collected_on, event_rules=
             report_id = None
             if report_url:
                 report_id = urlparse(report_url).path.strip("/").split("/")[0]
-            report_date = infer_report_date(int(match.group(1)), int(match.group(2)), collected_on)
+            report_date = infer_report_date(int(match.group(1)), int(match.group(2)), collected_on, match.group(3))
             event_type, event_note = classify_event(report_date.isoformat(), event_rules or {})
             featured = [line.strip() for line in row[4]["text"].splitlines() if line.strip()]
             reports.append(
@@ -433,9 +447,13 @@ def save_detail(conn, hall_id, report, summary, records, collected_at, raw_path)
 def export_csv(conn, csv_dir):
     directory = Path(csv_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    for table in ["daily_reports", "detail_summaries", "machine_reports"]:
-        rows = conn.execute(f"select * from {table}").fetchall()
-        columns = [desc[0] for desc in conn.execute(f"select * from {table} limit 1").description]
+    tables = ["daily_reports", "detail_summaries", "machine_reports", "unit_bonus_reports"]
+    for table in tables:
+        if not conn.execute("select 1 from sqlite_master where type = 'table' and name = ?", (table,)).fetchone():
+            continue
+        cursor = conn.execute(f"select * from {table}")
+        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
         with (directory / f"{table}.csv").open("w", encoding="utf-8-sig", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(columns)
