@@ -168,7 +168,7 @@ def target_machines(conn, report_date, hall=None, limit=None, missing_only=True)
     if hall:
         hall_filter = " and dr.hall_name = ?"
         params.append(hall)
-    having_filter = "having bonus_unit_count < unit_count" if missing_only else ""
+    having_filter = "having bonus_unit_count < unit_count or diff_unit_count < unit_count" if missing_only else ""
     sql_limit = " limit ?" if limit else ""
     if limit:
         params.append(limit)
@@ -176,7 +176,8 @@ def target_machines(conn, report_date, hall=None, limit=None, missing_only=True)
         f"""
         select mr.report_id, mr.hall_key, dr.hall_name, mr.report_date, mr.machine_name,
                count(*) unit_count,
-               sum(case when ub.bb_count is not null and ub.rb_count is not null then 1 else 0 end) bonus_unit_count
+               sum(case when ub.bb_count is not null and ub.rb_count is not null then 1 else 0 end) bonus_unit_count,
+               sum(case when mr.avg_diff is not null or mr.payout_rate is not null then 1 else 0 end) diff_unit_count
           from machine_reports mr
           join daily_reports dr
             on dr.hall_key = mr.hall_key
@@ -280,7 +281,8 @@ def collect(target_date, hall=None, limit=None, delay=8.0, missing_only=True, dr
             for machine in machines:
                 print(
                     f"{machine['report_date']} {machine['hall_name']} {machine['machine_name']} "
-                    f"{machine['bonus_unit_count']}/{machine['unit_count']}"
+                    f"bonus={machine['bonus_unit_count']}/{machine['unit_count']} "
+                    f"diff={machine['diff_unit_count']}/{machine['unit_count']}"
                 )
             total += len(machines)
             print(f"would check {len(machines)} machine pages for {hall_name} {report_date.isoformat()}")
