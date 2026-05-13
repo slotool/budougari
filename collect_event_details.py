@@ -2,10 +2,56 @@ import argparse
 import datetime as dt
 import json
 from pathlib import Path
+import re
 import sqlite3
 import time
+from urllib.request import Request, urlopen
 
 import minrepo_collect as collector
+
+
+def extract_cookie(page_html, name):
+    match = re.search(rf"\$\.cookie\('{re.escape(name)}',\s*'([^']+)'", page_html)
+    return match.group(1) if match else None
+
+
+def fetch_with_d2(url, d2_cookie=None, delay=0.0):
+    headers = {"User-Agent": collector.USER_AGENT}
+    if d2_cookie:
+        headers["Cookie"] = f"_d2={d2_cookie}"
+    request = Request(url, headers=headers)
+    with urlopen(request, timeout=30) as response:
+        charset = response.headers.get_content_charset() or "utf-8"
+        page_html = response.read().decode(charset, "replace")
+    if not d2_cookie:
+        d2_cookie = extract_cookie(page_html, "_d2")
+        if d2_cookie:
+            if delay:
+                time.sleep(delay)
+            return fetch_with_d2(url, d2_cookie, 0.0)
+    return page_html, d2_cookie
+
+
+def update_daily_from_units(conn, hall_id, report, unit_records, collected_at):
+    diffs = [item["avg_diff"] for item in unit_records if item.get("avg_diff") is not None]
+    games = [item["avg_game"] for item in unit_records if item.get("avg_game") is not None]
+    if not diffs:
+        return
+    total_diff = sum(diffs)
+    avg_diff = round(total_diff / len(diffs))
+    avg_game = round(sum(games) / len(games)) if games else None
+    conn.execute(
+        """
+        update daily_reports
+           set total_diff = ?,
+               avg_diff = ?,
+               avg_game = coalesce(?, avg_game),
+               collected_at = ?
+         where hall_key = ?
+           and report_date = ?
+        """,
+        (total_diff, avg_diff, avg_game, collected_at, hall_id, report["report_date"]),
+    )
 
 
 def main():
@@ -67,7 +113,7 @@ def main():
 
     for row in selected:
         report = dict(row)
-        detail_html, d2_cookie = collector.fetch_with_d2(report["report_url"], d2_cookie, delay)
+        detail_html, d2_cookie = fetch_with_d2(report["report_url"], d2_cookie, delay)
         detail_raw_path = collector.save_raw(
             config["raw_dir"], collected_on, hall_id, report["report_id"], detail_html
         )
@@ -76,13 +122,13 @@ def main():
 
         time.sleep(delay)
         all_url = report["report_url"].rstrip("/") + "/?kishu=all&sort=num"
-        all_html, d2_cookie = collector.fetch_with_d2(all_url, d2_cookie, delay)
+        all_html, d2_cookie = fetch_with_d2(all_url, d2_cookie, delay)
         all_raw_path = collector.save_raw(
             config["raw_dir"], collected_on, hall_id, f"{report['report_id']}_all", all_html
         )
         _, unit_records = collector.parse_detail_page(all_html, report, row_category="unit")
         collector.save_detail(conn, hall_id, report, {}, unit_records, collected_at, all_raw_path)
-        collector.update_daily_from_units(conn, hall_id, report, unit_records, collected_at)
+        update_daily_from_units(conn, hall_id, report, unit_records, collected_at)
         conn.commit()
         count += 1
         time.sleep(delay)
