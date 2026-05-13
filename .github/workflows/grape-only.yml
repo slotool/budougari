@@ -15,7 +15,7 @@ on:
       delay_seconds:
         description: "Delay between min-repo requests"
         required: true
-        default: "15"
+        default: "10"
 
 permissions:
   contents: write
