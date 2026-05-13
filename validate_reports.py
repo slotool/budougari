@@ -22,19 +22,23 @@ def main():
     bad_weekdays = query(
         conn,
         """
-        select hall_name, report_date, weekday,
-               case strftime('%w', report_date)
-                 when '0' then '日'
-                 when '1' then '月'
-                 when '2' then '火'
-                 when '3' then '水'
-                 when '4' then '木'
-                 when '5' then '金'
-                 when '6' then '土'
-               end as expected_weekday
-          from daily_reports
-         where weekday is not null
-           and weekday != expected_weekday
+        with weekday_check as (
+            select hall_name, report_date, weekday,
+                   case strftime('%w', report_date)
+                     when '0' then '日'
+                     when '1' then '月'
+                     when '2' then '火'
+                     when '3' then '水'
+                     when '4' then '木'
+                     when '5' then '金'
+                     when '6' then '土'
+                   end as expected_weekday
+              from daily_reports
+             where weekday is not null
+        )
+        select hall_name, report_date, weekday, expected_weekday
+          from weekday_check
+         where weekday != expected_weekday
         """,
     )
     for row in bad_weekdays:
