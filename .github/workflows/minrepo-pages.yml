@@ -105,9 +105,9 @@ jobs:
           python backfill_events.py
           python analyze_minrepo.py
           python analyze_juggler_patterns.py
-          python analyze_juggler.py --date "$TARGET_DATE" --out reports/juggler_today.md
+          python learned_juggler_report.py --date "$TARGET_DATE" --out reports/juggler_today.md
           python analyze_juggler_patterns.py --hall アウトバーンブリッツ --out reports/outbound_juggler_pattern_analysis.md
-          python analyze_juggler.py --hall アウトバーンブリッツ --date "$TARGET_DATE" --out reports/outbound_juggler_today.md
+          python learned_juggler_report.py --hall アウトバーンブリッツ --date "$TARGET_DATE" --out reports/outbound_juggler_today.md
           python estimate_grapes.py --date "$TARGET_DATE" --out reports/grape_estimates.md
           python build_combined_report.py
           python build_site.py
