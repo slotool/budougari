@@ -29,13 +29,28 @@ def build_report(db_path, output_path):
     halls = query(
         conn,
         """
-        select hall_key, hall_name, count(*) days,
+        select hall_key, hall_name, count(*) listed_days,
                min(report_date) first_date, max(report_date) last_date,
                avg(avg_diff) avg_of_avg_diff,
                avg(avg_game) avg_game,
                sum(case when coalesce(total_diff, avg_diff) is not null then 1 else 0 end) known_days,
-               sum(case when coalesce(total_diff, avg_diff) > 0 then 1 else 0 end) positive_days
-        from daily_reports
+               sum(case when coalesce(total_diff, avg_diff) > 0 then 1 else 0 end) positive_days,
+               (
+                 select count(distinct mr.report_date)
+                   from machine_reports mr
+                  where mr.hall_key = dr.hall_key
+                    and mr.category = 'unit'
+                    and mr.avg_diff is not null
+               ) detail_days,
+               (
+                 select count(distinct mr.report_date)
+                   from machine_reports mr
+                  where mr.hall_key = dr.hall_key
+                    and mr.category = 'unit'
+                    and mr.avg_diff is not null
+                    and instr(mr.machine_name, 'ジャグラー') > 0
+               ) juggler_detail_days
+        from daily_reports dr
         group by hall_key, hall_name
         order by hall_name
         """,
@@ -56,13 +71,12 @@ def build_report(db_path, output_path):
     weekday = query(
         conn,
         """
-        select hall_name, weekday, count(*) days, avg(avg_diff) avg_diff, avg(avg_game) avg_game,
+        select hall_name, weekday, count(*) listed_days, avg(avg_diff) avg_diff, avg(avg_game) avg_game,
                sum(case when coalesce(total_diff, avg_diff) is not null then 1 else 0 end) known_days,
                sum(case when coalesce(total_diff, avg_diff) > 0 then 1 else 0 end) positive_days
         from daily_reports
         where avg_diff is not null
         group by hall_name, weekday
-        having days >= 2
         order by hall_name, avg_diff desc
         """,
     )
@@ -70,7 +84,7 @@ def build_report(db_path, output_path):
     events = query(
         conn,
         """
-        select hall_name, event_type, count(*) days,
+        select hall_name, event_type, count(*) listed_days,
                sum(case when coalesce(total_diff, avg_diff) is not null then 1 else 0 end) known_days,
                sum(case when coalesce(total_diff, avg_diff) > 0 then 1 else 0 end) positive_days,
                avg(avg_diff) avg_diff,
@@ -125,16 +139,23 @@ def build_report(db_path, output_path):
         "",
         f"生成日時: {generated}",
         "",
+        "## 分析の前提",
+        "",
+        "- 店舗一覧ではマイナスの総差枚・平均差枚が `-` 表示になるため、全台詳細がある日は台別差枚から日別集計を復元しています。",
+        "- 曜日・イベントの数値は、DBに保存済みで差枚が復元できている日だけを母数にしています。",
+        "- サンプルが少ない曜日やイベントは傾向ではなく参考値です。",
+        "",
         "## 店舗別サマリー",
         "",
-        "| 店舗 | 期間 | 日数 | プラス日率 | 平均差枚の平均 | 平均G |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| 店舗 | 対象期間 | 一覧取得日数 | 差枚復元日数 | 全台詳細日数 | ジャグラー詳細日数 | プラス日率 | 平均差枚の平均 | 平均G |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
 
     for row in halls:
         positive_rate = row["positive_days"] / row["known_days"] * 100 if row["known_days"] else None
         lines.append(
-            f"| {row['hall_name']} | {row['first_date']} - {row['last_date']} | {row['days']} | "
+            f"| {row['hall_name']} | {row['first_date']} - {row['last_date']} | {row['listed_days']} | "
+            f"{row['known_days']} | {row['detail_days']} | {row['juggler_detail_days']} | "
             f"{pct(positive_rate)} | {fmt_int(round(row['avg_of_avg_diff']))} | {fmt_int(round(row['avg_game']))} |"
         )
 
@@ -160,14 +181,15 @@ def build_report(db_path, output_path):
             "",
             "## 曜日傾向",
             "",
-            "| 店舗 | 曜日 | 日数 | プラス日率 | 平均差枚の平均 | 平均G |",
-            "|---|---:|---:|---:|---:|---:|",
+            "| 店舗 | 曜日 | 一覧取得日数 | 差枚復元日数 | 信頼度 | プラス日率 | 平均差枚の平均 | 平均G |",
+            "|---|---:|---:|---:|---|---:|---:|---:|",
         ]
     )
     for row in weekday:
         positive_rate = row["positive_days"] / row["known_days"] * 100 if row["known_days"] else None
+        confidence = "参考" if row["known_days"] < 5 else "通常"
         lines.append(
-            f"| {row['hall_name']} | {row['weekday']} | {row['days']} | {pct(positive_rate)} | "
+            f"| {row['hall_name']} | {row['weekday']} | {row['listed_days']} | {row['known_days']} | {confidence} | {pct(positive_rate)} | "
             f"{fmt_int(round(row['avg_diff']))} | {fmt_int(round(row['avg_game']))} |"
         )
 
@@ -176,19 +198,20 @@ def build_report(db_path, output_path):
             "",
             "## イベント種別傾向",
             "",
-            "| 店舗 | イベント | 日数 | プラス日率 | 平均総差枚 | 平均差枚の平均 | 平均G |",
-            "|---|---|---:|---:|---:|---:|---:|",
+            "| 店舗 | イベント | 一覧取得日数 | 差枚復元日数 | 信頼度 | プラス日率 | 平均総差枚 | 平均差枚の平均 | 平均G |",
+            "|---|---|---:|---:|---|---:|---:|---:|---:|",
         ]
     )
     if events:
         for row in events:
             positive_rate = row["positive_days"] / row["known_days"] * 100 if row["known_days"] else None
+            confidence = "参考" if row["known_days"] < 5 else "通常"
             lines.append(
-                f"| {row['hall_name']} | {row['event_type']} | {row['days']} | {pct(positive_rate)} | "
+                f"| {row['hall_name']} | {row['event_type']} | {row['listed_days']} | {row['known_days']} | {confidence} | {pct(positive_rate)} | "
                 f"{fmt_int(round(row['avg_total_diff']))} | {fmt_int(round(row['avg_diff']))} | {fmt_int(round(row['avg_game']))} |"
             )
     else:
-        lines.append("| イベントルール未登録 | - | - | - | - | - | - |")
+        lines.append("| イベントルール未登録 | - | - | - | - | - | - | - | - |")
 
     lines.extend(
         [
