@@ -83,6 +83,14 @@ jobs:
       - name: Repair dates after bonus collection
         run: python repair_report_dates.py
 
+      - name: Validate collected report data with BB/RB
+        if: ${{ inputs.collect_bonus }}
+        run: python validate_reports.py --require-bonus
+
+      - name: Validate collected report data
+        if: ${{ !inputs.collect_bonus }}
+        run: python validate_reports.py
+
       - name: Build grape estimate page
         run: |
           python estimate_grapes.py --date "$TARGET_DATE" --out reports/grape_estimates.md
