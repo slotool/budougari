@@ -22,14 +22,26 @@ def main():
     bad_weekdays = query(
         conn,
         """
-        select hall_name, report_date, weekday
+        select hall_name, report_date, weekday,
+               case strftime('%w', report_date)
+                 when '0' then '日'
+                 when '1' then '月'
+                 when '2' then '火'
+                 when '3' then '水'
+                 when '4' then '木'
+                 when '5' then '金'
+                 when '6' then '土'
+               end as expected_weekday
           from daily_reports
          where weekday is not null
-           and weekday != substr('月火水木金土日', cast(strftime('%w', report_date) as integer), 1)
+           and weekday != expected_weekday
         """,
     )
     for row in bad_weekdays:
-        errors.append(f"weekday mismatch: {row['hall_name']} {row['report_date']} stored={row['weekday']}")
+        errors.append(
+            f"weekday mismatch: {row['hall_name']} {row['report_date']} "
+            f"stored={row['weekday']} expected={row['expected_weekday']}"
+        )
 
     latest_daily = query(
         conn,
