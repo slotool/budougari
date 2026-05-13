@@ -36,19 +36,28 @@ def wrap(title, body):
     header h1 {{ margin: 0 0 10px; font-size: 20px; }}
     nav {{ display: flex; gap: 8px; flex-wrap: wrap; }}
     .btn {{ color: #111; border: 1px solid #bbb; background: #fff; padding: 10px 12px; border-radius: 6px; text-decoration: none; font-size: 14px; display: inline-block; }}
-    main {{ padding: 16px; max-width: 1100px; margin: 0 auto; }}
-    h1 {{ font-size: 24px; margin: 16px 0 10px; }}
-    h2 {{ font-size: 19px; margin-top: 28px; border-top: 1px solid #ddd; padding-top: 16px; }}
-    h3 {{ font-size: 16px; margin-top: 22px; }}
+    main {{ padding: 12px; max-width: 1100px; margin: 0 auto; }}
+    h1 {{ font-size: 22px; margin: 16px 0 10px; }}
+    h2 {{ font-size: 18px; margin-top: 26px; border-top: 1px solid #ddd; padding-top: 14px; }}
+    h3 {{ font-size: 16px; margin-top: 20px; }}
     p {{ line-height: 1.5; }}
     .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 14px 0; }}
     .card {{ background: white; border: 1px solid #ddd; border-radius: 8px; padding: 14px; }}
     .table-wrap {{ overflow-x: auto; background: white; border: 1px solid #ddd; border-radius: 8px; margin: 10px 0 18px; }}
-    table {{ border-collapse: collapse; width: 100%; font-size: 13px; min-width: 780px; }}
-    th, td {{ border-bottom: 1px solid #eee; padding: 8px; text-align: right; white-space: nowrap; }}
-    th:first-child, td:first-child, th:nth-child(3), td:nth-child(3) {{ text-align: left; }}
+    table {{ border-collapse: collapse; width: 100%; font-size: 13px; min-width: 680px; }}
+    th, td {{ border-bottom: 1px solid #eee; padding: 7px 8px; text-align: right; white-space: nowrap; }}
+    th:first-child, td:first-child, th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4) {{ text-align: left; }}
     th {{ background: #fafafa; }}
     .notice {{ background: #fff7d6; border: 1px solid #e7cf72; padding: 12px; border-radius: 8px; }}
+    @media (max-width: 640px) {{
+      header {{ padding: 10px 12px; }}
+      nav {{ flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }}
+      .btn {{ flex: 0 0 auto; padding: 9px 10px; }}
+      main {{ padding: 10px; }}
+      table {{ min-width: 620px; font-size: 12px; }}
+      th, td {{ padding: 7px 6px; }}
+      h1 {{ font-size: 20px; }}
+    }}
   </style>
 </head>
 <body>
