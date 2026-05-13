@@ -55,6 +55,6 @@
   "database": "data/minrepo.sqlite",
   "csv_dir": "exports",
   "raw_dir": "data/raw",
-  "request_delay_seconds": 15.0,
+  "request_delay_seconds": 10.0,
   "detail_pages_per_target": 3
 }
