@@ -7,71 +7,14 @@ import sqlite3
 REPLAY_DENOM = 7.298
 
 MODEL_SPECS = [
-    {
-        "keys": ["マイジャグラーV", "マイジャグラーⅤ"],
-        "bonus": (240, 96),
-        "grapes": [5.910, 5.870, 5.830, 5.800, 5.760, 5.670],
-        "cherry": 34.657,
-        "bell": 1024.0,
-        "pierrot": 1024.0,
-    },
-    {
-        "keys": ["Sアイムジャグラー", "アイムジャグラー", "ネオアイムジャグラー"],
-        "bonus": (252, 96),
-        "grapes": [6.024, 6.024, 6.024, 6.024, 6.024, 5.848],
-        "cherry": 35.617,
-        "bell": 1092.267,
-        "pierrot": 1092.267,
-    },
-    {
-        "keys": ["ゴーゴージャグラー３", "ゴーゴージャグラー3"],
-        "bonus": (240, 96),
-        "grapes": [6.2499, 6.2002, 6.1502, 6.0698, 5.9998, 5.9201],
-        "cherry": 33.20,
-        "bell": 1092.267,
-        "pierrot": 1092.267,
-    },
-    {
-        "keys": ["ファンキージャグラー"],
-        "bonus": (240, 96),
-        "grapes": [5.9400, 5.9298, 5.8798, 5.8301, 5.8000, 5.7700],
-        "cherry": 35.62,
-        "bell": 1092.27,
-        "pierrot": 1092.27,
-    },
-    {
-        "keys": ["ハッピージャグラー"],
-        "bonus": (240, 96),
-        "grapes": [6.04, 6.01, 5.98, 5.86, 5.84, 5.82],
-        "cherry": 56.55,
-        "bell": 655.36,
-        "pierrot": 655.36,
-        "cherry_payout": 4,
-    },
-    {
-        "keys": ["ジャグラーガールズ"],
-        "bonus": (252, 96),
-        "grapes": [6.01, 6.01, 6.01, 6.01, 5.92, 5.89],
-        "cherry": 33.301,
-        "bell": 1092.267,
-        "pierrot": 1092.267,
-    },
-    {
-        "keys": ["ミスタージャグラー"],
-        "bonus": (240, 96),
-        "grapes": [6.24212, 6.18381, 6.13690, 6.09807, 6.05973, 6.01689],
-        "cherry": 37.236,
-        "bell": 655.36,
-        "pierrot": 2173.04,
-    },
-    {
-        "keys": ["ウルトラミラクルジャグラー"],
-        "bonus": (240, 96),
-        "grapes": [5.940, 5.938, 5.936, 5.934, 5.933, 5.929],
-        "cherry": 34.86,
-        "bell": 1024.0,
-        "pierrot": 1024.0,
-    },
+    {"keys": ["マイジャグラーV", "マイジャグラーⅤ"], "bonus": (240, 96), "grapes": [5.910, 5.870, 5.830, 5.800, 5.760, 5.670], "cherry": 34.657, "bell": 1024.0, "pierrot": 1024.0},
+    {"keys": ["Sアイムジャグラー", "アイムジャグラー", "ネオアイムジャグラー"], "bonus": (252, 96), "grapes": [6.024, 6.024, 6.024, 6.024, 6.024, 5.848], "cherry": 35.617, "bell": 1092.267, "pierrot": 1092.267},
+    {"keys": ["ゴーゴージャグラー３", "ゴーゴージャグラー3"], "bonus": (240, 96), "grapes": [6.2499, 6.2002, 6.1502, 6.0698, 5.9998, 5.9201], "cherry": 33.20, "bell": 1092.267, "pierrot": 1092.267},
+    {"keys": ["ファンキージャグラー"], "bonus": (240, 96), "grapes": [5.9400, 5.9298, 5.8798, 5.8301, 5.8000, 5.7700], "cherry": 35.62, "bell": 1092.27, "pierrot": 1092.27},
+    {"keys": ["ハッピージャグラー"], "bonus": (240, 96), "grapes": [6.04, 6.01, 5.98, 5.86, 5.84, 5.82], "cherry": 56.55, "bell": 655.36, "pierrot": 655.36, "cherry_payout": 4},
+    {"keys": ["ジャグラーガールズ"], "bonus": (252, 96), "grapes": [6.01, 6.01, 6.01, 6.01, 5.92, 5.89], "cherry": 33.301, "bell": 1092.267, "pierrot": 1092.267},
+    {"keys": ["ミスタージャグラー"], "bonus": (240, 96), "grapes": [6.24212, 6.18381, 6.13690, 6.09807, 6.05973, 6.01689], "cherry": 37.236, "bell": 655.36, "pierrot": 2173.04},
+    {"keys": ["ウルトラミラクルジャグラー"], "bonus": (240, 96), "grapes": [5.940, 5.938, 5.936, 5.934, 5.933, 5.929], "cherry": 34.86, "bell": 1024.0, "pierrot": 1024.0},
 ]
 
 
@@ -91,14 +34,7 @@ def spec_for(machine_name):
     for spec in MODEL_SPECS:
         if any(key in machine_name for key in spec["keys"]):
             return spec
-    return {
-        "keys": ["汎用"],
-        "bonus": (240, 96),
-        "grapes": [6.20, 6.10, 6.00, 5.90, 5.85, 5.80],
-        "cherry": 35.62,
-        "bell": 1092.27,
-        "pierrot": 1092.27,
-    }
+    return {"keys": ["汎用"], "bonus": (240, 96), "grapes": [6.20, 6.10, 6.00, 5.90, 5.85, 5.80], "cherry": 35.62, "bell": 1092.27, "pierrot": 1092.27}
 
 
 def grade(denom, spec):
@@ -211,7 +147,6 @@ def summarize_machine(rows, skill):
                 "units": len(machine_rows),
                 "usable_units": len(usable),
                 "avg_game": sum((row["avg_game"] or 0) for row in machine_rows) / len(machine_rows),
-                "avg_diff_known": sum(1 for row in machine_rows if row["avg_diff"] is not None),
                 "actual_diff_units": actual_diff_units,
                 "payout_diff_units": payout_diff_units,
                 "total_games": games if usable else None,
@@ -238,12 +173,7 @@ def summarize_units(rows, skill):
     for row in sorted(rows, key=unit_sort_key):
         diff_value, diff_source = effective_diff(row)
         denom, spec = estimate_from_totals(
-            row["machine_name"],
-            row["avg_game"],
-            diff_value,
-            row["bb_count"],
-            row["rb_count"],
-            skill,
+            row["machine_name"], row["avg_game"], diff_value, row["bb_count"], row["rb_count"], skill
         )
         units.append(
             {
@@ -269,11 +199,7 @@ def summarize_units_by_machine(rows, skill):
 
 
 def diff_source_label(source):
-    return {
-        "actual": "実差枚",
-        "payout": "出率補完",
-        "missing": "欠損",
-    }.get(source, source)
+    return {"actual": "実差枚", "payout": "出率補完", "missing": "欠損"}.get(source, source)
 
 
 def write_report(db_path, target_date, output_path, skill):
@@ -305,25 +231,25 @@ def write_report(db_path, target_date, output_path, skill):
                 "",
                 f"参照データ日: {report_date.isoformat()}" + ("（対象日以前の最新取得日を使用）" if fallback else ""),
                 "",
-                "| 機種 | 台数 | 計算台数 | 平均G | 実差枚台数 | 出率補完台数 | 計算G | 計算差枚 | BB/RB | 推定ぶどう | 判定 |",
-                "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+                "| 機種 | 推定ぶどう | 判定 | 台数 | 計算台数 | 平均G | 計算差枚 | BB/RB | 実差枚台数 | 出率補完台数 | 計算G |",
+                "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|",
             ]
         )
         for row in summarize_machine(rows, skill):
             bonus_text = f"BB {fmt_int(row['bb'])} / RB {fmt_int(row['rb'])}" if row["bb"] is not None else "未取得"
             grape_text = f"1/{fmt_float(row['denom'])}" if row["denom"] is not None else "計算不可"
             lines.append(
-                f"| {row['machine_name']} | {row['units']} | {row['usable_units']} | {fmt_int(row['avg_game'])} | "
-                f"{row['actual_diff_units']} | {row['payout_diff_units']} | {fmt_int(row['total_games'])} | {fmt_int(row['total_diff'])} | "
-                f"{bonus_text} | {grape_text} | {row['grade']} |"
+                f"| {row['machine_name']} | {grape_text} | {row['grade']} | {row['units']} | {row['usable_units']} | "
+                f"{fmt_int(row['avg_game'])} | {fmt_int(row['total_diff'])} | {bonus_text} | "
+                f"{row['actual_diff_units']} | {row['payout_diff_units']} | {fmt_int(row['total_games'])} |"
             )
         lines.append("")
         lines.extend(
             [
                 "### 台番別ぶどう推定",
                 "",
-                "| 台番 | 機種 | G数 | 差枚 | 差枚元 | BB/RB | 推定ぶどう | 判定 |",
-                "|---:|---|---:|---:|---|---:|---:|---|",
+                "| 台番 | 推定ぶどう | 判定 | 機種 | G数 | 差枚 | BB/RB | 差枚元 |",
+                "|---:|---:|---|---|---:|---:|---:|---|",
             ]
         )
         for machine_name, unit_rows in summarize_units_by_machine(rows, skill):
@@ -332,9 +258,8 @@ def write_report(db_path, target_date, output_path, skill):
                 bonus_text = f"BB {fmt_int(row['bb'])} / RB {fmt_int(row['rb'])}" if row["bb"] is not None else "未取得"
                 grape_text = f"1/{fmt_float(row['denom'])}" if row["denom"] is not None else "計算不可"
                 lines.append(
-                    f"| {row['unit_no']} | {row['machine_name']} | {fmt_int(row['avg_game'])} | "
-                    f"{fmt_int(row['diff'])} | {diff_source_label(row['diff_source'])} | "
-                    f"{bonus_text} | {grape_text} | {row['grade']} |"
+                    f"| {row['unit_no']} | {grape_text} | {row['grade']} | {row['machine_name']} | "
+                    f"{fmt_int(row['avg_game'])} | {fmt_int(row['diff'])} | {bonus_text} | {diff_source_label(row['diff_source'])} |"
                 )
         lines.append("")
 
