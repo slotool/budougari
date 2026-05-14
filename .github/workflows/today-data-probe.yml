@@ -1,0 +1,30 @@
+name: today data probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Probe today data pages
+        run: python today_data_probe.py
+
+      - name: Commit probe report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
+          git add reports/today_data_probe.md
+          git diff --cached --quiet || git commit -m "Update today data probe"
+          git pull --rebase
+          git push
