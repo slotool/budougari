@@ -6,7 +6,7 @@ on:
       delay_seconds:
         description: "Fetch delay seconds"
         required: true
-        default: "10"
+        default: "5"
   schedule:
     - cron: "30 22 * * *"
 
@@ -32,7 +32,7 @@ jobs:
           python-version: "3.12"
 
       - name: Collect latest grape estimates
-        run: python run_latest_grapes.py --delay "${{ github.event.inputs.delay_seconds || '10' }}"
+        run: python run_latest_grapes.py --delay "${{ github.event.inputs.delay_seconds || '5' }}"
 
       - name: Build site
         run: python build_site.py
