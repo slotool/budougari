@@ -32,7 +32,7 @@ jobs:
           python-version: "3.12"
 
       - name: Collect latest grape estimates
-        run: python latest_grape_report.py --delay "${{ github.event.inputs.delay_seconds || '10' }}"
+        run: python run_latest_grapes.py --delay "${{ github.event.inputs.delay_seconds || '10' }}"
 
       - name: Build site
         run: python build_site.py
