@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import latest_grape_report as report
+import latest_grape_report_impl as report
 
 
 def setting_grade(denom: float, spec: report.ModelSpec) -> str:
