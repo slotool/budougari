@@ -41,10 +41,10 @@ MODEL_SPECS = (
     ModelSpec("ネオアイム", "ネオアイムジャグラーEX", 252, 96, (6.024, 6.020, 6.016, 6.012, 6.008, 5.848), 35.617, 1092.267, 1092.267),
     ModelSpec("アイムジャグラー", "アイムジャグラーEX", 252, 96, (6.024, 6.020, 6.016, 6.012, 6.008, 5.848), 35.617, 1092.267, 1092.267),
     ModelSpec("ゴーゴージャグラー", "ゴーゴージャグラー3", 240, 96, (6.2499, 6.2002, 6.1502, 6.0698, 5.9998, 5.9201), 33.20, 1092.267, 1092.267),
-    ModelSpec("ファンキー", "ファンキージャグラー2", 240, 96, (5.94, 5.9298, 5.8798, 5.8301, 5.8000, 5.7700), 35.62, 1092.27, 1092.27),
+    ModelSpec("ファンキー", "��c��ンキージャグラー2", 240, 96, (5.94, 5.9298, 5.8798, 5.8301, 5.8000, 5.7700), 35.62, 1092.27, 1092.27),
     ModelSpec("ハッピー", "ハッピージャグラーVIII", 240, 96, (6.04, 6.01, 5.98, 5.86, 5.84, 5.82), 56.55, 655.36, 655.36, 4),
     ModelSpec("ジャグラーガールズ", "ジャグラーガールズSS", 252, 96, (6.01, 6.01, 6.01, 6.01, 5.92, 5.89), 33.301, 1092.267, 1092.267),
-    ModelSpec("ミスタージャグラー", "ミスタージャグラー", 240, 96, (6.24212, 6.18381, 6.13690, 6.09807, 6.05973, 6.01689), 37.236, 655.36, 2173.04),
+    ModelSpec("ミスタージャグラー", "��c��タージャグラー", 240, 96, (6.24212, 6.18381, 6.13690, 6.09807, 6.05973, 6.01689), 37.236, 655.36, 2173.04),
     ModelSpec("ウルトラミラクル", "ウルトラミラクルジャグラー", 240, 96, (5.940, 5.938, 5.936, 5.934, 5.933, 5.929), 34.86, 1024.0, 1024.0),
 )
 
@@ -273,7 +273,7 @@ def parse_machine_units(source: str, machine: str) -> list[dict[str, Any]]:
             continue
         h = header_map(header)
         for row in table[1:]:
-            if len(row) < len(header) or split_link(row[0])[0] in {"台番", "平均"}:
+            if len(row) < len(header) or split_link(row[0])[0] in {"台番", "平假"}:
                 continue
             unit = parse_int(split_link(row[h["台番"]])[0])
             if unit is None:
@@ -316,16 +316,13 @@ def estimate_grape(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def grade_grape(denom: float, spec: ModelSpec) -> str:
-    s1, s2, s3, s4, s5, s6 = spec.grape_denoms
-    if denom <= s6:
-        return "設定6近辺以上"
-    if denom <= s5:
-        return "設定5-6近辺"
-    if denom <= s3:
-        return "中間以上目安"
-    if denom <= s1:
-        return "設定1より良好"
-    return "弱め"
+    pairs = [(1, spec.grape_denoms[0]), (2, spec.grape_denoms[1]), (3, spec.grape_denoms[2]), (4, spec.grape_denoms[3]), (5, spec.grape_denoms[4]), (6, spec.grape_denoms[5])]
+    nearest_setting, nearest_denom = min(pairs, key=lambda item: abs(denom - item[1]))
+    if denom <= spec.grape_denoms[5]:
+        return f"設定6以上目安"
+    if denom > spec.grape_denoms[0]:
+        return f"設定1未満目安"
+    return f"設定{nearest_setting}近辺"
 
 
 def fmt_int(value: Any) -> str:
@@ -334,6 +331,10 @@ def fmt_int(value: Any) -> str:
 
 def fmt_grape(value: Any) -> str:
     return f"1/{value:.2f}" if isinstance(value, (int, float)) and math.isfinite(value) else "-"
+
+
+def fmt_rate(value: Any) -> str:
+    return f"1/{value:.0f}" if isinstance(value, (int, float)) and math.isfinite(value) else "-"
 
 
 def collect_hall(client: MinRepoClient, hall: dict[str, str], today: date) -> dict[str, Any]:
@@ -365,16 +366,22 @@ def summarize(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for machine in sorted({r["machine"] for r in rows}):
         ms = [r for r in rows if r["machine"] == machine]
         calc = [r for r in ms if isinstance(r.get("grape_denom"), (int, float))]
+        total_games = sum((r.get("games") or 0) for r in ms)
+        total_bb = sum((r.get("bb") or 0) for r in ms)
+        total_rb = sum((r.get("rb") or 0) for r in ms)
         result.append(
             {
                 "machine": machine,
                 "count": len(ms),
                 "calc_count": len(calc),
                 "avg_grape": sum(r["grape_denom"] for r in calc) / len(calc) if calc else None,
-                "avg_games": round(sum((r.get("games") or 0) for r in ms) / len(ms)) if ms else None,
+                "avg_games": round(total_games / len(ms)) if ms else None,
                 "total_diff": sum((r.get("diff") or 0) for r in ms),
-                "bb": sum((r.get("bb") or 0) for r in ms),
-                "rb": sum((r.get("rb") or 0) for r in ms),
+                "bb": total_bb,
+                "rb": total_rb,
+                "combined_rate": total_games / (total_bb + total_rb) if total_bb + total_rb > 0 else None,
+                "bb_rate": total_games / total_bb if total_bb > 0 else None,
+                "rb_rate": total_games / total_rb if total_rb > 0 else None,
             }
         )
     return result
@@ -404,11 +411,11 @@ def write_outputs(results: list[dict[str, Any]]) -> None:
         lines.append("")
         lines.append("### 機種別まとめ")
         lines.append("")
-        lines.append("| 機種 | 推定ぶどう | 台数 | 計算台数 | 平均G | 合計差枚 | BB/RB |")
-        lines.append("|---|---:|---:|---:|---:|---:|---:|")
+        lines.append("| 機種 | 推定ぶどう | 合算確率 | BIG確率 | REG確率 | 台数 | 計算台数 | 平均G | 合計差枚 | BB/RB |")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for s in summarize(rows):
             lines.append(
-                f"| {s['machine']} | {fmt_grape(s['avg_grape'])} | {s['count']} | {s['calc_count']} | {fmt_int(s['avg_games'])} | {fmt_int(s['total_diff'])} | {fmt_int(s['bb'])}/{fmt_int(s['rb'])} |"
+                f"| {s['machine']} | {fmt_grape(s['avg_grape'])} | {fmt_rate(s['combined_rate'])} | {fmt_rate(s['bb_rate'])} | {fmt_rate(s['rb_rate'])} | {s['count']} | {s['calc_count']} | {fmt_int(s['avg_games'])} | {fmt_int(s['total_diff'])} | {fmt_int(s['bb'])}/{fmt_int(s['rb'])} |"
             )
         lines.append("")
         lines.append("### 台番別")
