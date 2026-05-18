@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import latest_grape_report_impl as report
+from latest_grape_report_overrides import write_outputs_with_grade
 
 
 def setting_grade(denom: float, spec: report.ModelSpec) -> str:
@@ -21,4 +22,5 @@ def setting_grade(denom: float, spec: report.ModelSpec) -> str:
 
 
 report.grade_grape = setting_grade
+report.write_outputs = lambda results: write_outputs_with_grade(report, results)
 report.main()
