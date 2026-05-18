@@ -41,10 +41,10 @@ MODEL_SPECS = (
     ModelSpec("ネオアイム", "ネオアイムジャグラーEX", 252, 96, (6.024, 6.020, 6.016, 6.012, 6.008, 5.848), 35.617, 1092.267, 1092.267),
     ModelSpec("アイムジャグラー", "アイムジャグラーEX", 252, 96, (6.024, 6.020, 6.016, 6.012, 6.008, 5.848), 35.617, 1092.267, 1092.267),
     ModelSpec("ゴーゴージャグラー", "ゴーゴージャグラー3", 240, 96, (6.2499, 6.2002, 6.1502, 6.0698, 5.9998, 5.9201), 33.20, 1092.267, 1092.267),
-    ModelSpec("ファンキー", "ファンキージャグラー2", 240, 96, (5.94, 5.9298, 5.8798, 5.8301, 5.8000, 5.7700), 35.62, 1092.27, 1092.27),
+    ModelSpec("ファンキー", "��c��ンキージャグラー2", 240, 96, (5.94, 5.9298, 5.8798, 5.8301, 5.8000, 5.7700), 35.62, 1092.27, 1092.27),
     ModelSpec("ハッピー", "ハッピージャグラーVIII", 240, 96, (6.04, 6.01, 5.98, 5.86, 5.84, 5.82), 56.55, 655.36, 655.36, 4),
     ModelSpec("ジャグラーガールズ", "ジャグラーガールズSS", 252, 96, (6.01, 6.01, 6.01, 6.01, 5.92, 5.89), 33.301, 1092.267, 1092.267),
-    ModelSpec("ミスタージャグラー", "ミスタージャグラー", 240, 96, (6.24212, 6.18381, 6.13690, 6.09807, 6.05973, 6.01689), 37.236, 655.36, 2173.04),
+    ModelSpec("ミスタージャグラー", "��c��タージャグラー", 240, 96, (6.24212, 6.18381, 6.13690, 6.09807, 6.05973, 6.01689), 37.236, 655.36, 2173.04),
     ModelSpec("ウルトラミラクル", "ウルトラミラクルジャグラー", 240, 96, (5.940, 5.938, 5.936, 5.934, 5.933, 5.929), 34.86, 1024.0, 1024.0),
 )
 
@@ -273,7 +273,7 @@ def parse_machine_units(source: str, machine: str) -> list[dict[str, Any]]:
             continue
         h = header_map(header)
         for row in table[1:]:
-            if len(row) < len(header) or split_link(row[0])[0] in {"台番", "平均"}:
+            if len(row) < len(header) or split_link(row[0])[0] in {"台番", "平假"}:
                 continue
             unit = parse_int(split_link(row[h["台番"]])[0])
             if unit is None:
@@ -375,6 +375,7 @@ def summarize(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "count": len(ms),
                 "calc_count": len(calc),
                 "avg_grape": sum(r["grape_denom"] for r in calc) / len(calc) if calc else None,
+                "grade": grade_grape(sum(r["grape_denom"] for r in calc) / len(calc), spec_for(machine)) if calc else "-",
                 "avg_games": round(total_games / len(ms)) if ms else None,
                 "total_diff": sum((r.get("diff") or 0) for r in ms),
                 "bb": total_bb,
@@ -396,7 +397,7 @@ def write_outputs(results: list[dict[str, Any]]) -> None:
     lines.append("")
     lines.append(f"生成日時: {datetime.now(JST).strftime('%Y-%m-%d %H:%M:%S JST')}")
     lines.append("")
-    lines.append("前提: 最新掲載日のジャグラー各機種だけを対象に、BB/RB・差枚・G数から台番別に逆算しています。チェリー、ベル、ピエロは実測値ではなく機種別の公表確率前提です。")
+    lines.append("剂提: 最新掲載日のジャグラー各機種だけを対象に、BB/RB・差枚・G数から台番別に逆算しています。チェリー、ベル、ピエロは実測値ではなく機種別の公表確率前提です。")
     lines.append("")
 
     csv_rows: list[dict[str, Any]] = []
@@ -411,11 +412,11 @@ def write_outputs(results: list[dict[str, Any]]) -> None:
         lines.append("")
         lines.append("### 機種別まとめ")
         lines.append("")
-        lines.append("| 機種 | 推定ぶどう | 合算確率 | BIG確率 | REG確率 | 台数 | 計算台数 | 平均G | 合計差枚 | BB/RB |")
-        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+        lines.append("| 機種 | 推定ぶどう | 判定 | 合算確率 | BIG確率 | REG確率 | 台数 | 計算台数 | 平均G | 合計差枚 | BB/RB |")
+        lines.append("|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|")
         for s in summarize(rows):
             lines.append(
-                f"| {s['machine']} | {fmt_grape(s['avg_grape'])} | {fmt_rate(s['combined_rate'])} | {fmt_rate(s['bb_rate'])} | {fmt_rate(s['rb_rate'])} | {s['count']} | {s['calc_count']} | {fmt_int(s['avg_games'])} | {fmt_int(s['total_diff'])} | {fmt_int(s['bb'])}/{fmt_int(s['rb'])} |"
+                f"| {s['machine']} | {fmt_grape(s['avg_grape'])} | {s['grade']} | {fmt_rate(s['combined_rate'])} | {fmt_rate(s['bb_rate'])} | {fmt_rate(s['rb_rate'])} | {s['count']} | {s['calc_count']} | {fmt_int(s['avg_games'])} | {fmt_int(s['total_diff'])} | {fmt_int(s['bb'])}/{fmt_int(s['rb'])} |"
             )
         lines.append("")
         lines.append("### 台番別")
