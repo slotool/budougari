@@ -9,6 +9,8 @@ on:
         default: "5"
   schedule:
     - cron: "7 23 * * *"
+    - cron: "37 23 * * *"
+    - cron: "7 0 * * *"
 
 permissions:
   contents: write
@@ -27,17 +29,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check daily run marker
+        id: daily_guard
+        shell: bash
+        run: |
+          today="$(TZ=Asia/Tokyo date +%F)"
+          marker_file="reports/.latest-grapes-run-date"
+          if [ "${{ github.event_name }}" = "schedule" ] && [ -f "$marker_file" ] && [ "$(cat "$marker_file")" = "$today" ]; then
+            echo "run_collect=false" >> "$GITHUB_OUTPUT"
+            echo "Already collected for $today; skipping duplicate schedule run."
+          else
+            echo "run_collect=true" >> "$GITHUB_OUTPUT"
+            echo "Collecting for $today."
+          fi
+          echo "today=$today" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-python@v5
+        if: steps.daily_guard.outputs.run_collect == 'true'
         with:
           python-version: "3.12"
 
       - name: Collect latest grape estimates
+        if: steps.daily_guard.outputs.run_collect == 'true'
         run: python run_latest_grapes.py --delay "${{ github.event.inputs.delay_seconds || '5' }}"
 
       - name: Build site
+        if: steps.daily_guard.outputs.run_collect == 'true'
         run: python build_site.py
 
+      - name: Mark daily run
+        if: steps.daily_guard.outputs.run_collect == 'true'
+        shell: bash
+        run: |
+          mkdir -p reports
+          printf "%s\n" "${{ steps.daily_guard.outputs.today }}" > reports/.latest-grapes-run-date
+
       - name: Commit report outputs
+        if: steps.daily_guard.outputs.run_collect == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -47,9 +75,12 @@ jobs:
           git push
 
       - uses: actions/configure-pages@v5
+        if: steps.daily_guard.outputs.run_collect == 'true'
 
       - uses: actions/upload-pages-artifact@v3
+        if: steps.daily_guard.outputs.run_collect == 'true'
         with:
           path: site
 
       - uses: actions/deploy-pages@v4
+        if: steps.daily_guard.outputs.run_collect == 'true'
