@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import html
+import json
 import re
 from datetime import date
 from urllib.parse import urljoin, urlparse
+from urllib.request import Request, urlopen
 
 import latest_grape_report_impl as report
 from latest_grape_report_overrides import write_outputs_with_grade
@@ -57,6 +60,40 @@ def _candidate(label: str, href: str | None, tag_url: str, today: date) -> dict[
     return {"date": rep_date, "url": report_url, "id": path_id, "label": label}
 
 
+def _fetch_json(url: str) -> object:
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "ja"})
+    with urlopen(req, timeout=30) as res:
+        return json.loads(res.read().decode("utf-8", errors="replace"))
+
+
+def _latest_from_wp_api(tag_url: str, today: date) -> dict[str, object] | None:
+    parsed = urlparse(tag_url)
+    slug = parsed.path.strip("/").split("/")[-1]
+    if not slug:
+        return None
+
+    tags_url = f"{report.BASE_URL}/wp-json/wp/v2/tags?slug={slug}"
+    tags = _fetch_json(tags_url)
+    if not isinstance(tags, list) or not tags:
+        return None
+    tag_id = tags[0].get("id")
+    if not tag_id:
+        return None
+
+    posts_url = f"{report.BASE_URL}/wp-json/wp/v2/posts?tags={tag_id}&per_page=10&_fields=id,link,title,date"
+    posts = _fetch_json(posts_url)
+    if not isinstance(posts, list):
+        return None
+
+    for post in posts:
+        title = html.unescape(str(post.get("title", {}).get("rendered", "")))
+        link = str(post.get("link", ""))
+        found = _candidate(title, link, tag_url, today)
+        if found:
+            return found
+    return None
+
+
 def find_latest_report_resilient(source: str, tag_url: str, today: date) -> dict[str, object]:
     try:
         return _original_find_latest_report(source, tag_url, today)
@@ -77,15 +114,20 @@ def find_latest_report_resilient(source: str, tag_url: str, today: date) -> dict
                     return found
 
     pattern = re.compile(
-        r"<a[^>]+href=[\"']([^\"']*/\d+/?)['\"][^>]*>\s*((?:20\d{2}/)?\d{1,2}/\d{1,2}\([^<]+\))\s*</a>",
+        r"<a[^>]+href=[\"']([^\"']*/\d+/?)['\"][^>]*>\s*((?:20\d{2}/)?\d{1,2}/\d{1,2}\([^<]+\)[^<]*)\s*</a>",
         re.IGNORECASE,
     )
     for href, label in pattern.findall(source):
-        found = _candidate(label, href, tag_url, today)
+        found = _candidate(html.unescape(label), href, tag_url, today)
         if found:
             return found
 
-    raise RuntimeError("最新掲載日の行が見つかりませんでした")
+    found = _latest_from_wp_api(tag_url, today)
+    if found:
+        return found
+
+    snippet = " ".join(source[:300].split())
+    raise RuntimeError(f"最新掲載日の行が見つかりませんでした: snippet={snippet}")
 
 
 _original_find_latest_report = report.find_latest_report
