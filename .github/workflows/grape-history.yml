@@ -8,7 +8,7 @@ on:
         required: true
         default: "5"
       low_output_diff_max:
-        description: "Max diff for estimated 6 low-output targets"
+        description: "Unused legacy input"
         required: true
         default: "500"
       backfill_days:
@@ -47,7 +47,7 @@ jobs:
         run: >
           python grape_history_report.py
           --delay "${{ github.event.inputs.delay_seconds || '5' }}"
-          --min-games 2000
+          --min-games 0
           --low-output-diff-max "${{ github.event.inputs.low_output_diff_max || '500' }}"
           --backfill-days "${{ github.event.inputs.backfill_days || '0' }}"
           --max-new-reports "${{ github.event.inputs.max_new_reports || '20' }}"
