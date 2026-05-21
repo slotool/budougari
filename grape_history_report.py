@@ -21,14 +21,7 @@ REPORT_HTML = Path("site/grape_history_analysis.html")
 
 
 def setting_grade(denom: float, spec: report.ModelSpec) -> str:
-    pairs = [
-        (1, spec.grape_denoms[0]),
-        (2, spec.grape_denoms[1]),
-        (3, spec.grape_denoms[2]),
-        (4, spec.grape_denoms[3]),
-        (5, spec.grape_denoms[4]),
-        (6, spec.grape_denoms[5]),
-    ]
+    pairs = [(i + 1, d) for i, d in enumerate(spec.grape_denoms)]
     nearest_setting, _ = min(pairs, key=lambda item: abs(denom - item[1]))
     if denom <= spec.grape_denoms[5]:
         return "設定6以上目安"
@@ -82,9 +75,7 @@ def latest_from_wp_api(tag_url: str, today: date) -> dict[str, object] | None:
     tags = fetch_json(f"{report.BASE_URL}/wp-json/wp/v2/tags?slug={slug}")
     if not isinstance(tags, list) or not tags or not tags[0].get("id"):
         return None
-    posts = fetch_json(
-        f"{report.BASE_URL}/wp-json/wp/v2/posts?tags={tags[0]['id']}&per_page=10&_fields=id,link,title,date"
-    )
+    posts = fetch_json(f"{report.BASE_URL}/wp-json/wp/v2/posts?tags={tags[0]['id']}&per_page=10&_fields=id,link,title,date")
     if not isinstance(posts, list):
         return None
     for post in posts:
@@ -144,10 +135,8 @@ def list_reports_from_tag(client: report.MinRepoClient, hall: dict[str, str], to
 def collect_hall_report(client: report.MinRepoClient, hall: dict[str, str], latest: dict[str, object]) -> dict[str, object]:
     all_url = f"{str(latest['url']).rstrip('/')}/?kishu=all&sort=num"
     all_rows = report.parse_all_units(client.fetch(all_url))
-
     by_key: dict[tuple[str, int], dict[str, object]] = {(r["machine"], r["unit"]): r for r in all_rows}
-    machines = sorted({r["machine"] for r in all_rows})
-    for machine in machines:
+    for machine in sorted({r["machine"] for r in all_rows}):
         machine_url = f"{report.BASE_URL}/{latest['id']}/?kishu={quote(machine)}"
         for row in report.parse_machine_units(client.fetch(machine_url), machine):
             key = (row["machine"], row["unit"])
@@ -165,10 +154,6 @@ def collect_hall_report(client: report.MinRepoClient, hall: dict[str, str], late
 
 def fmt_int(value: object) -> str:
     return f"{value:,}" if isinstance(value, int) else "-"
-
-
-def fmt_float(value: object, digits: int = 2) -> str:
-    return f"{value:.{digits}f}" if isinstance(value, (int, float)) and math.isfinite(value) else "-"
 
 
 def fmt_grape(value: object) -> str:
@@ -200,8 +185,7 @@ def history_key(row: dict[str, object]) -> tuple[str, str, str, str]:
 
 def append_history(results: list[dict[str, object]]) -> list[dict[str, str]]:
     HISTORY_CSV.parent.mkdir(exist_ok=True)
-    existing = load_history()
-    rows_by_key: dict[tuple[str, str, str, str], dict[str, object]] = {history_key(r): dict(r) for r in existing}
+    rows_by_key: dict[tuple[str, str, str, str], dict[str, object]] = {history_key(r): dict(r) for r in load_history()}
     collected_at = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S%z")
 
     for result in results:
@@ -227,22 +211,7 @@ def append_history(results: list[dict[str, object]]) -> list[dict[str, str]]:
             }
             rows_by_key[history_key(out)] = out
 
-    fields = [
-        "hall",
-        "date",
-        "label",
-        "report_url",
-        "machine",
-        "unit",
-        "grape_denom",
-        "grade",
-        "games",
-        "diff",
-        "bb",
-        "rb",
-        "payout_rate",
-        "collected_at",
-    ]
+    fields = ["hall", "date", "label", "report_url", "machine", "unit", "grape_denom", "grade", "games", "diff", "bb", "rb", "payout_rate", "collected_at"]
     sorted_rows = sorted(rows_by_key.values(), key=lambda r: (str(r["hall"]), str(r["date"]), str(r["machine"]), int(r["unit"])))
     with HISTORY_CSV.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
@@ -256,10 +225,7 @@ def next_same_unit(row: dict[str, str], rows: list[dict[str, str]]) -> dict[str,
     candidates = [
         other
         for other in rows
-        if other["hall"] == row["hall"]
-        and other["machine"] == row["machine"]
-        and other["unit"] == row["unit"]
-        and date.fromisoformat(other["date"]) > base_date
+        if other["hall"] == row["hall"] and other["unit"] == row["unit"] and date.fromisoformat(other["date"]) > base_date
     ]
     return min(candidates, key=lambda r: r["date"], default=None)
 
@@ -268,30 +234,76 @@ def is_estimated_six(row: dict[str, str]) -> bool:
     return row.get("grade") == "設定6以上目安"
 
 
-def analyze(rows: list[dict[str, str]], min_games: int, low_output_diff_max: int) -> dict[str, object]:
-    targets = []
-    followed = []
-    for row in rows:
-        games = to_int(row.get("games"))
-        diff = to_int(row.get("diff"))
-        if games is None or diff is None:
-            continue
-        if games >= min_games and diff <= low_output_diff_max and is_estimated_six(row):
-            nxt = next_same_unit(row, rows)
-            item = {"base": row, "next": nxt}
-            targets.append(item)
-            if nxt:
-                followed.append(item)
+def diff_bucket(diff: int) -> str:
+    if diff <= -1000:
+        return "-1000枚以下"
+    if diff < 0:
+        return "-999～-1枚"
+    if diff <= 499:
+        return "0～+499枚"
+    if diff <= 999:
+        return "+500～+999枚"
+    return "+1000枚以上"
 
-    next_positive = [x for x in followed if (to_int(x["next"].get("diff")) or 0) > 0]
-    next_est_six = [x for x in followed if is_estimated_six(x["next"])]
-    next_diffs = [to_int(x["next"].get("diff")) for x in followed if to_int(x["next"].get("diff")) is not None]
+
+def games_bucket(games: int) -> str:
+    if games < 1000:
+        return "0～999G"
+    if games < 2000:
+        return "1000～1999G"
+    if games < 4000:
+        return "2000～3999G"
+    if games < 6000:
+        return "4000～5999G"
+    return "6000G以上"
+
+
+def summarize_items(items: list[dict[str, dict[str, str] | None]]) -> dict[str, object]:
+    followed = [item for item in items if item["next"]]
+    next_positive = [item for item in followed if (to_int(item["next"].get("diff")) or 0) > 0]
+    next_est_six = [item for item in followed if is_estimated_six(item["next"])]
+    same_machine = [item for item in followed if item["base"]["machine"] == item["next"]["machine"]]
+    next_diffs = [to_int(item["next"].get("diff")) for item in followed if to_int(item["next"].get("diff")) is not None]
     return {
-        "targets": targets,
-        "followed": followed,
+        "targets": len(items),
+        "followed": len(followed),
+        "missing": len(items) - len(followed),
         "next_positive_count": len(next_positive),
         "next_est_six_count": len(next_est_six),
+        "same_machine_count": len(same_machine),
         "avg_next_diff": round(sum(next_diffs) / len(next_diffs)) if next_diffs else None,
+    }
+
+
+def analyze(rows: list[dict[str, str]], min_games: int, low_output_diff_max: int) -> dict[str, object]:
+    targets = []
+    for row in rows:
+        if is_estimated_six(row):
+            targets.append({"base": row, "next": next_same_unit(row, rows)})
+
+    bucket_order = ["-1000枚以下", "-999～-1枚", "0～+499枚", "+500～+999枚", "+1000枚以上", "差枚不明"]
+    games_bucket_order = ["0～999G", "1000～1999G", "2000～3999G", "4000～5999G", "6000G以上", "G数不明"]
+    by_bucket = {bucket: [] for bucket in bucket_order}
+    by_games_bucket = {bucket: [] for bucket in games_bucket_order}
+    by_hall: dict[str, list[dict[str, dict[str, str] | None]]] = {}
+    by_machine: dict[str, list[dict[str, dict[str, str] | None]]] = {}
+
+    for item in targets:
+        base = item["base"]
+        diff = to_int(base.get("diff"))
+        games = to_int(base.get("games"))
+        by_bucket[diff_bucket(diff) if diff is not None else "差枚不明"].append(item)
+        by_games_bucket[games_bucket(games) if games is not None else "G数不明"].append(item)
+        by_hall.setdefault(base["hall"], []).append(item)
+        by_machine.setdefault(base["machine"], []).append(item)
+
+    return {
+        "targets": targets,
+        "summary": summarize_items(targets),
+        "bucket_summary": [(bucket, summarize_items(items)) for bucket, items in by_bucket.items() if items],
+        "games_bucket_summary": [(bucket, summarize_items(items)) for bucket, items in by_games_bucket.items() if items],
+        "hall_summary": sorted([(name, summarize_items(items)) for name, items in by_hall.items()], key=lambda x: x[0]),
+        "machine_summary": sorted([(name, summarize_items(items)) for name, items in by_machine.items()], key=lambda x: (-int(x[1]["targets"]), x[0])),
     }
 
 
@@ -299,37 +311,58 @@ def write_report(rows: list[dict[str, str]], analysis: dict[str, object], min_ga
     REPORT_MD.parent.mkdir(exist_ok=True)
     REPORT_HTML.parent.mkdir(exist_ok=True)
     targets = analysis["targets"]
-    followed = analysis["followed"]
+    summary = analysis["summary"]
     lines: list[str] = [
         "# 推定ぶどう履歴 翌掲載日分析",
         "",
         f"生成日時: {datetime.now(JST).strftime('%Y-%m-%d %H:%M:%S JST')}",
         "",
-        f"判定条件: G数 {min_games:,}G以上、推定ぶどう判定が「設定6以上目安」、差枚 {low_output_diff_max:+,}枚以下を「推定6なのに伸び不足」として追跡。",
-        "店休日を考慮し、翌カレンダー日ではなく同じ店舗・同じ機種・同じ台番の「次に蓄積された掲載日」と比較します。",
+        "判定条件: 推定ぶどう判定が「設定6以上目安」の全台を、G数・差枚に関係なく追跡。",
+        "店休日を考慮し、翌カレンダー日ではなく同じ店舗・同じ台番の「次に蓄積された掲載日」と比較します。",
+        "機種名が変わった場合は、同じ台番の次掲載日として追跡しつつ「機種変更あり」と表示します。",
         "",
         "## 集計",
         "",
         f"- 履歴行数: {len(rows):,}",
         f"- 追跡対象: {len(targets):,}",
-        f"- 翌掲載日まで確認済み: {len(followed):,}",
+        f"- 翌掲載日まで確認済み: {summary['followed']:,}",
+        f"- 翌掲載日なし: {summary['missing']:,}",
     ]
-    if followed:
-        lines.extend(
-            [
-                f"- 翌掲載日プラス率: {analysis['next_positive_count']}/{len(followed)} ({analysis['next_positive_count'] / len(followed) * 100:.1f}%)",
-                f"- 翌掲載日も推定6率: {analysis['next_est_six_count']}/{len(followed)} ({analysis['next_est_six_count'] / len(followed) * 100:.1f}%)",
-                f"- 翌掲載日平均差枚: {fmt_int(analysis['avg_next_diff'])}",
-            ]
-        )
+    if summary["followed"]:
+        lines.extend([
+            f"- 翌掲載日プラス率: {summary['next_positive_count']}/{summary['followed']} ({summary['next_positive_count'] / summary['followed'] * 100:.1f}%)",
+            f"- 翌掲載日も推定6率: {summary['next_est_six_count']}/{summary['followed']} ({summary['next_est_six_count'] / summary['followed'] * 100:.1f}%)",
+            f"- 翌掲載日同機種継続率: {summary['same_machine_count']}/{summary['followed']} ({summary['same_machine_count'] / summary['followed'] * 100:.1f}%)",
+            f"- 翌掲載日平均差枚: {fmt_int(summary['avg_next_diff'])}",
+        ])
+
+    def add_summary_table(title: str, rows_: list[tuple[str, dict[str, object]]]) -> None:
+        lines.extend(["", f"## {title}", ""])
+        lines.append("| 区分 | 対象 | 翌確認 | 翌なし | 翌プラス率 | 翌推定6率 | 同機種継続率 | 翌平均差枚 |")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|")
+        for name, s in rows_:
+            followed_count = int(s["followed"])
+            plus_rate = f"{int(s['next_positive_count']) / followed_count * 100:.1f}%" if followed_count else "-"
+            six_rate = f"{int(s['next_est_six_count']) / followed_count * 100:.1f}%" if followed_count else "-"
+            same_rate = f"{int(s['same_machine_count']) / followed_count * 100:.1f}%" if followed_count else "-"
+            lines.append(f"| {name} | {s['targets']:,} | {s['followed']:,} | {s['missing']:,} | {plus_rate} | {six_rate} | {same_rate} | {fmt_int(s['avg_next_diff'])} |")
+
+    add_summary_table("基準日の差枚別傾向", analysis["bucket_summary"])
+    add_summary_table("基準日のG数別傾向", analysis["games_bucket_summary"])
+    add_summary_table("店舗別傾向", analysis["hall_summary"])
+    add_summary_table("機種別傾向", analysis["machine_summary"])
+
     lines.extend(["", "## 追跡対象と翌掲載日", ""])
-    lines.append("| 店舗 | 基準日 | 機種 | 台番 | 基準G | 基準差枚 | 基準ぶどう | 翌掲載日 | 翌G | 翌差枚 | 翌ぶどう | 翌判定 |")
-    lines.append("|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+    lines.append("| 店舗 | 基準日 | 機種 | 台番 | 基準G | 基準差枚 | 基準ぶどう | 翌掲載日 | 翌機種 | 追跡 | 翌G | 翌差枚 | 翌ぶどう | 翌判定 |")
+    lines.append("|---|---:|---|---:|---:|---:|---:|---:|---|---|---:|---:|---:|---|")
     for item in targets:
         base = item["base"]
         nxt = item["next"]
+        follow_status = "-"
+        if nxt:
+            follow_status = "同機種継続" if nxt.get("machine") == base.get("machine") else "機種変更あり"
         lines.append(
-            "| {hall} | {date} | {machine} | {unit} | {games} | {diff} | {grape} | {next_date} | {next_games} | {next_diff} | {next_grape} | {next_grade} |".format(
+            "| {hall} | {date} | {machine} | {unit} | {games} | {diff} | {grape} | {next_date} | {next_machine} | {follow_status} | {next_games} | {next_diff} | {next_grape} | {next_grade} |".format(
                 hall=base["hall"],
                 date=base["date"],
                 machine=base["machine"],
@@ -338,6 +371,8 @@ def write_report(rows: list[dict[str, str]], analysis: dict[str, object], min_ga
                 diff=fmt_int(to_int(base.get("diff"))),
                 grape=fmt_grape(to_float(base.get("grape_denom"))),
                 next_date=nxt["date"] if nxt else "-",
+                next_machine=nxt["machine"] if nxt else "-",
+                follow_status=follow_status,
                 next_games=fmt_int(to_int(nxt.get("games"))) if nxt else "-",
                 next_diff=fmt_int(to_int(nxt.get("diff"))) if nxt else "-",
                 next_grape=fmt_grape(to_float(nxt.get("grape_denom"))) if nxt else "-",
@@ -345,7 +380,7 @@ def write_report(rows: list[dict[str, str]], analysis: dict[str, object], min_ga
             )
         )
     if not targets:
-        lines.append("| - | - | - | - | - | - | - | - | - | - | - | - |")
+        lines.append("| - | - | - | - | - | - | - | - | - | - | - | - | - | - |")
 
     markdown = "\n".join(lines)
     REPORT_MD.write_text(markdown, encoding="utf-8")
@@ -400,7 +435,7 @@ def render_html(markdown: str) -> str:
     th {{ background: #eef4ff; }}
     th:first-child, td:first-child {{ position: sticky; left: 0; background: #fff; text-align: left; font-weight: 700; box-shadow: 1px 0 0 #d9dee5; }}
     th:first-child {{ background: #eef4ff; }}
-    td:nth-child(7), td:nth-child(11) {{ color: #b42318; font-weight: 800; }}
+    td:nth-child(7), td:nth-child(13) {{ color: #b42318; font-weight: 800; }}
   </style>
 </head>
 <body><main>
@@ -422,7 +457,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.json")
     parser.add_argument("--delay", type=float, default=None)
-    parser.add_argument("--min-games", type=int, default=2000)
+    parser.add_argument("--min-games", type=int, default=0)
     parser.add_argument("--low-output-diff-max", type=int, default=500)
     parser.add_argument("--backfill-days", type=int, default=0)
     parser.add_argument("--max-new-reports", type=int, default=20)
@@ -430,7 +465,6 @@ def main() -> None:
 
     config = json.loads(Path(args.config).read_text(encoding="utf-8"))
     delay = args.delay if args.delay is not None else float(config.get("delay_seconds", 5))
-
     client = report.MinRepoClient(delay_seconds=delay)
     today = datetime.now(JST).date()
 
