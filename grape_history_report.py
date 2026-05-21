@@ -6,9 +6,9 @@ import html
 import json
 import math
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 import latest_grape_report_impl as report
@@ -117,6 +117,50 @@ def find_latest_report_resilient(source: str, tag_url: str, today: date) -> dict
     if found:
         return found
     raise RuntimeError("最新掲載日の行が見つかりませんでした")
+
+
+def list_reports_from_tag(client: report.MinRepoClient, hall: dict[str, str], today: date, days: int) -> list[dict[str, object]]:
+    source = client.fetch(hall["tag_url"])
+    since = today - timedelta(days=days)
+    found_by_id: dict[str, dict[str, object]] = {}
+    for table in report.parse_tables(source):
+        if not table:
+            continue
+        header = [report.split_link(c)[0] for c in table[0]]
+        if not header or header[0] != "日付":
+            continue
+        for row in table[1:]:
+            if not row:
+                continue
+            label, href = report.split_link(row[0])
+            found = candidate(label, href, hall["tag_url"], today)
+            if not found:
+                continue
+            if since <= found["date"] <= today:
+                found_by_id[str(found["id"])] = found
+    return sorted(found_by_id.values(), key=lambda item: item["date"])
+
+
+def collect_hall_report(client: report.MinRepoClient, hall: dict[str, str], latest: dict[str, object]) -> dict[str, object]:
+    all_url = f"{str(latest['url']).rstrip('/')}/?kishu=all&sort=num"
+    all_rows = report.parse_all_units(client.fetch(all_url))
+
+    by_key: dict[tuple[str, int], dict[str, object]] = {(r["machine"], r["unit"]): r for r in all_rows}
+    machines = sorted({r["machine"] for r in all_rows})
+    for machine in machines:
+        machine_url = f"{report.BASE_URL}/{latest['id']}/?kishu={quote(machine)}"
+        for row in report.parse_machine_units(client.fetch(machine_url), machine):
+            key = (row["machine"], row["unit"])
+            merged = by_key.get(key, {"machine": row["machine"], "unit": row["unit"]})
+            merged.update({k: v for k, v in row.items() if v is not None})
+            by_key[key] = merged
+
+    rows = []
+    for row in by_key.values():
+        row.update(report.estimate_grape(row))
+        rows.append(row)
+    rows.sort(key=lambda r: (r["machine"], r["unit"]))
+    return {"hall": hall["name"], "latest": latest, "rows": rows}
 
 
 def fmt_int(value: object) -> str:
@@ -380,6 +424,8 @@ def main() -> None:
     parser.add_argument("--delay", type=float, default=None)
     parser.add_argument("--min-games", type=int, default=2000)
     parser.add_argument("--low-output-diff-max", type=int, default=500)
+    parser.add_argument("--backfill-days", type=int, default=0)
+    parser.add_argument("--max-new-reports", type=int, default=20)
     args = parser.parse_args()
 
     config = json.loads(Path(args.config).read_text(encoding="utf-8"))
@@ -387,7 +433,24 @@ def main() -> None:
 
     client = report.MinRepoClient(delay_seconds=delay)
     today = datetime.now(JST).date()
-    results = [report.collect_hall(client, hall, today) for hall in config["halls"]]
+
+    existing = load_history()
+    existing_report_keys = {(row["hall"], row["date"]) for row in existing}
+    results: list[dict[str, object]] = []
+    if args.backfill_days > 0:
+        for hall in config["halls"]:
+            reports = list_reports_from_tag(client, hall, today, args.backfill_days)
+            for latest in reports:
+                if (hall["name"], latest["date"].isoformat()) in existing_report_keys:
+                    continue
+                results.append(collect_hall_report(client, hall, latest))
+                if len(results) >= args.max_new_reports:
+                    break
+            if len(results) >= args.max_new_reports:
+                break
+    else:
+        results = [report.collect_hall(client, hall, today) for hall in config["halls"]]
+
     history = append_history(results)
     analysis = analyze(history, args.min_games, args.low_output_diff_max)
     write_report(history, analysis, args.min_games, args.low_output_diff_max)
