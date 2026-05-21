@@ -1,0 +1,60 @@
+name: grape history followup analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      delay_seconds:
+        description: "Fetch delay seconds"
+        required: true
+        default: "5"
+      low_output_diff_max:
+        description: "Max diff for estimated 6 low-output targets"
+        required: true
+        default: "500"
+  schedule:
+    - cron: "27 0 * * *"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: grape-history
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Collect and analyze grape history
+        run: >
+          python grape_history_report.py
+          --delay "${{ github.event.inputs.delay_seconds || '5' }}"
+          --min-games 2000
+          --low-output-diff-max "${{ github.event.inputs.low_output_diff_max || '500' }}"
+
+      - name: Commit history outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data reports site
+          git diff --cached --quiet || git commit -m "Update grape history analysis"
+          git pull --rebase
+          git push
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@v4
