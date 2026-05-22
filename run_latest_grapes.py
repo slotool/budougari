@@ -11,7 +11,10 @@ import latest_grape_report_impl as report
 from latest_grape_report_overrides import write_outputs_with_grade
 
 
-PLAY_LEVEL_NAME = "チェリー狙い時相当"
+PLAY_LEVEL_NAME = "適当時/チェリー狙い時"
+RANDOM_CHERRY_CAPTURE_RATE = 2 / 3
+RANDOM_BELL_CAPTURE_RATE = 2 / 9
+RANDOM_PIERROT_CAPTURE_RATE = 0.10
 
 
 def setting_grade(denom: float, spec: report.ModelSpec) -> str:
@@ -31,21 +34,52 @@ def setting_grade(denom: float, spec: report.ModelSpec) -> str:
     return f"設定{nearest_setting}近辺"
 
 
-def estimate_grape_cherry_aim(row: dict[str, object]) -> dict[str, object]:
-    games, diff, bb, rb = row.get("games"), row.get("diff"), row.get("bb"), row.get("rb")
-    if not all(isinstance(x, int) for x in (games, diff, bb, rb)) or games <= 0:
-        return {"grape_denom": None, "grade": "計算不可"}
-
-    spec = report.spec_for(str(row["machine"]))
+def grape_from_known_payout(games: int, diff: int, known_payout: float) -> float | None:
     replay_count = games / report.REPLAY_DENOM
-    known_payout = bb * spec.big_payout + rb * spec.reg_payout
-    known_payout += games / spec.cherry_denom * spec.cherry_payout
     input_medals = (games - replay_count) * 3
     grape_count = (diff + input_medals - known_payout) / 8
     if grape_count <= 0:
-        return {"grape_denom": None, "grade": "計算不可"}
-    denom = games / grape_count
-    return {"grape_denom": denom, "grade": setting_grade(denom, spec), "model": spec.display, "play_level": PLAY_LEVEL_NAME}
+        return None
+    return games / grape_count
+
+
+def estimate_grape_by_play_levels(row: dict[str, object]) -> dict[str, object]:
+    games, diff, bb, rb = row.get("games"), row.get("diff"), row.get("bb"), row.get("rb")
+    if not all(isinstance(x, int) for x in (games, diff, bb, rb)) or games <= 0:
+        return {
+            "grape_denom": None,
+            "grade": "計算不可",
+            "grape_denom_random": None,
+            "grade_random": "計算不可",
+            "grape_denom_cherry": None,
+            "grade_cherry": "計算不可",
+        }
+
+    spec = report.spec_for(str(row["machine"]))
+    bonus_payout = bb * spec.big_payout + rb * spec.reg_payout
+
+    random_known_payout = bonus_payout
+    random_known_payout += games / spec.cherry_denom * spec.cherry_payout * RANDOM_CHERRY_CAPTURE_RATE
+    random_known_payout += games / spec.bell_denom * 14 * RANDOM_BELL_CAPTURE_RATE
+    random_known_payout += games / spec.pierrot_denom * 10 * RANDOM_PIERROT_CAPTURE_RATE
+    random_denom = grape_from_known_payout(games, diff, random_known_payout)
+
+    cherry_known_payout = bonus_payout
+    cherry_known_payout += games / spec.cherry_denom * spec.cherry_payout
+    cherry_denom = grape_from_known_payout(games, diff, cherry_known_payout)
+
+    random_grade = setting_grade(random_denom, spec) if random_denom is not None else "計算不可"
+    cherry_grade = setting_grade(cherry_denom, spec) if cherry_denom is not None else "計算不可"
+    return {
+        "grape_denom": cherry_denom,
+        "grade": cherry_grade,
+        "grape_denom_random": random_denom,
+        "grade_random": random_grade,
+        "grape_denom_cherry": cherry_denom,
+        "grade_cherry": cherry_grade,
+        "model": spec.display,
+        "play_level": PLAY_LEVEL_NAME,
+    }
 
 
 def _date_from_label(label: str, today: date) -> date | None:
@@ -153,7 +187,7 @@ def find_latest_report_resilient(source: str, tag_url: str, today: date) -> dict
 _original_find_latest_report = report.find_latest_report
 report.find_latest_report = find_latest_report_resilient
 report.grade_grape = setting_grade
-report.estimate_grape = estimate_grape_cherry_aim
+report.estimate_grape = estimate_grape_by_play_levels
 report.PLAY_LEVEL_NAME = PLAY_LEVEL_NAME
 report.write_outputs = lambda results: write_outputs_with_grade(report, results)
 report.main()
