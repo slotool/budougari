@@ -11,6 +11,12 @@ import latest_grape_report_impl as report
 from latest_grape_report_overrides import write_outputs_with_grade
 
 
+PLAY_LEVEL_NAME = "通常打ち想定"
+CHERRY_CAPTURE_RATE = 0.90
+BELL_CAPTURE_RATE = 0.75
+PIERROT_CAPTURE_RATE = 0.75
+
+
 def setting_grade(denom: float, spec: report.ModelSpec) -> str:
     pairs = [
         (1, spec.grape_denoms[0]),
@@ -26,6 +32,25 @@ def setting_grade(denom: float, spec: report.ModelSpec) -> str:
     if denom > spec.grape_denoms[0]:
         return "設定1未満目安"
     return f"設定{nearest_setting}近辺"
+
+
+def estimate_grape_normal_play(row: dict[str, object]) -> dict[str, object]:
+    games, diff, bb, rb = row.get("games"), row.get("diff"), row.get("bb"), row.get("rb")
+    if not all(isinstance(x, int) for x in (games, diff, bb, rb)) or games <= 0:
+        return {"grape_denom": None, "grade": "計算不可"}
+
+    spec = report.spec_for(str(row["machine"]))
+    replay_count = games / report.REPLAY_DENOM
+    known_payout = bb * spec.big_payout + rb * spec.reg_payout
+    known_payout += games / spec.cherry_denom * spec.cherry_payout * CHERRY_CAPTURE_RATE
+    known_payout += games / spec.bell_denom * 14 * BELL_CAPTURE_RATE
+    known_payout += games / spec.pierrot_denom * 10 * PIERROT_CAPTURE_RATE
+    input_medals = (games - replay_count) * 3
+    grape_count = (diff + input_medals - known_payout) / 8
+    if grape_count <= 0:
+        return {"grape_denom": None, "grade": "計算不可"}
+    denom = games / grape_count
+    return {"grape_denom": denom, "grade": setting_grade(denom, spec), "model": spec.display, "play_level": PLAY_LEVEL_NAME}
 
 
 def _date_from_label(label: str, today: date) -> date | None:
@@ -133,5 +158,10 @@ def find_latest_report_resilient(source: str, tag_url: str, today: date) -> dict
 _original_find_latest_report = report.find_latest_report
 report.find_latest_report = find_latest_report_resilient
 report.grade_grape = setting_grade
+report.estimate_grape = estimate_grape_normal_play
+report.PLAY_LEVEL_NAME = PLAY_LEVEL_NAME
+report.CHERRY_CAPTURE_RATE = CHERRY_CAPTURE_RATE
+report.BELL_CAPTURE_RATE = BELL_CAPTURE_RATE
+report.PIERROT_CAPTURE_RATE = PIERROT_CAPTURE_RATE
 report.write_outputs = lambda results: write_outputs_with_grade(report, results)
 report.main()
