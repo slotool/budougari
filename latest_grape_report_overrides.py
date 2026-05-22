@@ -57,7 +57,8 @@ def write_outputs_with_grade(report, results: list[dict[str, Any]]) -> None:
     lines.append("")
     lines.append(f"生成日時: {datetime.now(report.JST).strftime('%Y-%m-%d %H:%M:%S JST')}")
     lines.append("")
-    lines.append("前提: 最新掲載日のジャグラー各機種だけを対象に、BB/RB・差枚・G数から台番別に逆算しています。チェリー、ベル、ピエロは実測値ではなく機種別の公表確率どおり取得できた前提です。低G数や小役取りこぼしがある台は、推定ぶどうが悪めに出やすくなります。")
+    lines.append("前提: 最新掲載日のジャグラー各機種だけを対象に、BB/RB・差枚・G数から台番別に逆算しています。打ち方レベルは完全取得ではなく通常打ち想定です。")
+    lines.append("通常打ち想定: チェリー90%、ベル75%、ピエロ75%を取得した前提で、取りこぼし分は既知払い出しから控除します。")
     lines.append("機種別まとめの推定ぶどうは、各台の分母単純平均ではなく、G数で重みを付けた合算値です。")
     lines.append("")
 
