@@ -6,6 +6,20 @@ from pathlib import Path
 from typing import Any
 
 
+def combined_grape_denom(rows: list[dict[str, Any]]) -> float | None:
+    total_games = 0
+    total_grapes = 0.0
+    for row in rows:
+        games = row.get("games")
+        denom = row.get("grape_denom")
+        if isinstance(games, int) and games > 0 and isinstance(denom, (int, float)) and denom > 0:
+            total_games += games
+            total_grapes += games / denom
+    if total_games <= 0 or total_grapes <= 0:
+        return None
+    return total_games / total_grapes
+
+
 def summarize_with_grade(report, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for machine in sorted({r["machine"] for r in rows}):
@@ -14,7 +28,7 @@ def summarize_with_grade(report, rows: list[dict[str, Any]]) -> list[dict[str, A
         total_games = sum((r.get("games") or 0) for r in ms)
         total_bb = sum((r.get("bb") or 0) for r in ms)
         total_rb = sum((r.get("rb") or 0) for r in ms)
-        avg_grape = sum(r["grape_denom"] for r in calc) / len(calc) if calc else None
+        avg_grape = combined_grape_denom(calc)
         result.append(
             {
                 "machine": machine,
@@ -43,7 +57,8 @@ def write_outputs_with_grade(report, results: list[dict[str, Any]]) -> None:
     lines.append("")
     lines.append(f"生成日時: {datetime.now(report.JST).strftime('%Y-%m-%d %H:%M:%S JST')}")
     lines.append("")
-    lines.append("前提: 最新掲載日のジャグラー各機種だけを対象に、BB/RB・差枚・G数から台番別に逆算しています。チェリー、ベル、ピエロは実測値ではなく機種別の公表確率前提です。")
+    lines.append("前提: 最新掲載日のジャグラー各機種だけを対象に、BB/RB・差枚・G数から台番別に逆算しています。チェリー、ベル、ピエロは実測値ではなく機種別の公表確率どおり取得できた前提です。低G数や小役取りこぼしがある台は、推定ぶどうが悪めに出やすくなります。")
+    lines.append("機種別まとめの推定ぶどうは、各台の分母単純平均ではなく、G数で重みを付けた合算値です。")
     lines.append("")
 
     csv_rows: list[dict[str, Any]] = []
