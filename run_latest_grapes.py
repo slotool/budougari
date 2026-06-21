@@ -4,7 +4,7 @@ import html
 import json
 import re
 from datetime import date
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 import latest_grape_report_impl as report
@@ -237,8 +237,59 @@ def find_latest_report_resilient(source: str, tag_url: str, today: date) -> dict
     raise RuntimeError(f"最新掲載日の行が見つかりませんでした: snippet={snippet}")
 
 
+def extract_juggler_machines(source: str, latest_id: str) -> list[str]:
+    machines: set[str] = set()
+    patterns = [
+        rf"href=[\"'](?:https://min-repo\.com)?/{re.escape(latest_id)}/\?kishu=([^\"'&#]+)",
+        r"href=[\"']\?kishu=([^\"'&#]+)",
+    ]
+    for pattern in patterns:
+        for encoded in re.findall(pattern, source):
+            machine = unquote(html.unescape(encoded)).replace("+", " ")
+            if machine and machine != "all" and report.is_juggler(machine):
+                machines.add(machine)
+    return sorted(machines)
+
+
+def collect_hall_resilient(client: report.MinRepoClient, hall: dict[str, str], today: date) -> dict[str, object]:
+    tag_html = client.fetch(hall["tag_url"])
+    latest = find_latest_report_resilient(tag_html, hall["tag_url"], today)
+    report_url = str(latest["url"]).rstrip("/") + "/"
+    latest_id = str(latest["id"])
+
+    all_html = client.fetch(f"{report_url}?kishu=all&sort=num")
+    all_rows = report.parse_all_units(all_html) if all_html.strip() else []
+    by_key: dict[tuple[str, int], dict[str, object]] = {(r["machine"], r["unit"]): r for r in all_rows}
+    machines = sorted({str(r["machine"]) for r in all_rows})
+
+    if not machines:
+        top_html = client.fetch(report_url)
+        machines = extract_juggler_machines(top_html, latest_id)
+
+    for machine in machines:
+        machine_url = f"{report.BASE_URL}/{latest_id}/?kishu={report.quote(machine)}"
+        machine_html = client.fetch(machine_url)
+        if not machine_html.strip():
+            continue
+        for row in report.parse_machine_units(machine_html, machine):
+            key = (row["machine"], row["unit"])
+            merged = by_key.get(key, {"machine": row["machine"], "unit": row["unit"]})
+            merged.update({k: v for k, v in row.items() if v is not None})
+            by_key[key] = merged
+
+    rows: list[dict[str, object]] = []
+    for row in by_key.values():
+        row.update(estimate_grape_by_play_levels(row))
+        rows.append(row)
+    rows.sort(key=lambda r: (r["machine"], r["unit"]))
+    if not rows:
+        raise RuntimeError(f"ジャグラー台データが0件です: {hall['name']} {latest['date']} {report_url}")
+    return {"hall": hall["name"], "latest": latest, "rows": rows}
+
+
 _original_find_latest_report = report.find_latest_report
 report.find_latest_report = find_latest_report_resilient
+report.collect_hall = collect_hall_resilient
 report.grade_grape = setting_grade
 report.estimate_grape = estimate_grape_by_play_levels
 report.PLAY_LEVEL_NAME = PLAY_LEVEL_NAME
