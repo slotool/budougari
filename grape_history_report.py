@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
+import grape_formula
 import latest_grape_report_impl as report
 
 
@@ -21,13 +22,7 @@ REPORT_HTML = Path("site/grape_history_analysis.html")
 
 
 def setting_grade(denom: float, spec: report.ModelSpec) -> str:
-    pairs = [(i + 1, d) for i, d in enumerate(spec.grape_denoms)]
-    nearest_setting, _ = min(pairs, key=lambda item: abs(denom - item[1]))
-    if denom <= spec.grape_denoms[5]:
-        return "設定6以上目安"
-    if denom > spec.grape_denoms[0]:
-        return "設定1未満目安"
-    return f"設定{nearest_setting}近辺"
+    return grape_formula.setting_grade(denom, spec)
 
 
 def date_from_label(label: str, today: date) -> date | None:
@@ -146,7 +141,7 @@ def collect_hall_report(client: report.MinRepoClient, hall: dict[str, str], late
 
     rows = []
     for row in by_key.values():
-        row.update(report.estimate_grape(row))
+        row.update(grape_formula.estimate_grape_by_play_levels(row))
         rows.append(row)
     rows.sort(key=lambda r: (r["machine"], r["unit"]))
     return {"hall": hall["name"], "latest": latest, "rows": rows}
@@ -493,6 +488,7 @@ def main() -> None:
 original_find_latest_report = report.find_latest_report
 report.find_latest_report = find_latest_report_resilient
 report.grade_grape = setting_grade
+report.estimate_grape = grape_formula.estimate_grape_by_play_levels
 
 
 if __name__ == "__main__":
