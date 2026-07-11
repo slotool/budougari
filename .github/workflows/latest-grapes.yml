@@ -17,9 +17,8 @@ on:
       - "build_site.py"
       - ".github/workflows/latest-grapes.yml"
   schedule:
-    - cron: "7 23 * * *"
-    - cron: "37 23 * * *"
-    - cron: "7 0 * * *"
+    # 09:30 JST = 00:30 UTC
+    - cron: "30 0 * * *"
 
 permissions:
   contents: write
