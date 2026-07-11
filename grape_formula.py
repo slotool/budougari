@@ -13,8 +13,8 @@ PLAY_LEVEL_DENOMS: dict[str, dict[str, tuple[float | None, float | None, float |
         "cherry": (34.66, None, None),
     },
     "ネオアイム": {
-        "random": (53.426, 4915.20, 10865.179),
-        "cherry": (35.617, None, None),
+        "random": (53.43, 4915.20, 10865.18),
+        "cherry": (35.62, None, None),
     },
     "アイムジャグラー": {
         "random": (53.43, 4915.20, 10865.18),
@@ -47,12 +47,19 @@ PLAY_LEVEL_DENOMS: dict[str, dict[str, tuple[float | None, float | None, float |
 }
 
 
+def grape_denoms_for_grade(spec: report.ModelSpec) -> tuple[float, float, float, float, float, float]:
+    if spec.key in {"ネオアイム", "アイムジャグラー"}:
+        return (6.024, 6.024, 6.024, 6.024, 6.024, 5.848)
+    return spec.grape_denoms
+
+
 def setting_grade(denom: float, spec: report.ModelSpec) -> str:
-    pairs = [(i + 1, d) for i, d in enumerate(spec.grape_denoms)]
+    grape_denoms = grape_denoms_for_grade(spec)
+    pairs = [(i + 1, d) for i, d in enumerate(grape_denoms)]
     nearest_setting, _ = min(pairs, key=lambda item: abs(denom - item[1]))
-    if denom <= spec.grape_denoms[5]:
+    if denom <= grape_denoms[5]:
         return "設定6以上目安"
-    if denom > spec.grape_denoms[0]:
+    if denom > grape_denoms[0]:
         return "設定1未満目安"
     return f"設定{nearest_setting}近辺"
 
