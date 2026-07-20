@@ -30,8 +30,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: latest-grapes
+  cancel-in-progress: true
 
 jobs:
   build:
