@@ -44,14 +44,17 @@ class Stats:
     games_sum: int = 0
     bb_sum: int = 0
     rb_sum: int = 0
+    bonus_games_sum: int = 0
 
     def add(self, row: dict[str, object]) -> None:
         self.count += 1
         self.hits += int(row["hit"])
         self.diff_sum += int(row["diff"])
         self.games_sum += int(row["games"])
-        self.bb_sum += int(row["bb"])
-        self.rb_sum += int(row["rb"])
+        if isinstance(row.get("bb"), int) and isinstance(row.get("rb"), int):
+            self.bb_sum += int(row["bb"])
+            self.rb_sum += int(row["rb"])
+            self.bonus_games_sum += int(row["games"])
 
     @property
     def hit_rate(self) -> float:
@@ -63,12 +66,12 @@ class Stats:
 
     @property
     def rb_denom(self) -> float | None:
-        return self.games_sum / self.rb_sum if self.rb_sum else None
+        return self.bonus_games_sum / self.rb_sum if self.rb_sum else None
 
     @property
     def combined_denom(self) -> float | None:
         total = self.bb_sum + self.rb_sum
-        return self.games_sum / total if total else None
+        return self.bonus_games_sum / total if total else None
 
 
 def integer(value: object, default: int = 0) -> int:
@@ -92,20 +95,18 @@ def payout_rate(games: int, diff: int, supplied: object = None) -> float:
     return round(100.0 + diff / (games * 3) * 100.0, 1)
 
 
-def is_hit(games: int, diff: int, bb: int, rb: int) -> int:
+def is_hit(games: int, diff: int, bb: int | None = None, rb: int | None = None) -> int:
     # Low activity is retained as a miss instead of being discarded.
     if games < 100:
         return 0
-    rb_good = games >= 3000 and rb > 0 and games / rb <= 300
-    combined_good = games >= 3000 and bb + rb > 0 and games / (bb + rb) <= 140
-    return int(diff >= 500 or rb_good or combined_good)
+    return int(diff >= 500)
 
 
 def normalize(raw: dict[str, object], collected_at: str | None = None) -> dict[str, object]:
     games = integer(raw.get("games"))
     diff = integer(raw.get("diff"))
-    bb = integer(raw.get("bb"))
-    rb = integer(raw.get("rb"))
+    bb = None if raw.get("bb") in (None, "") else integer(raw.get("bb"))
+    rb = None if raw.get("rb") in (None, "") else integer(raw.get("rb"))
     return {
         "hall": str(raw.get("hall", "")),
         "date": str(raw.get("date", "")),
@@ -115,8 +116,8 @@ def normalize(raw: dict[str, object], collected_at: str | None = None) -> dict[s
         "unit": str(integer(raw.get("unit"))),
         "games": games,
         "diff": diff,
-        "bb": bb,
-        "rb": rb,
+        "bb": "" if bb is None else bb,
+        "rb": "" if rb is None else rb,
         "payout_rate": f"{payout_rate(games, diff, raw.get('payout_rate')):.1f}",
         "low_activity": int(games < 100),
         "hit": is_hit(games, diff, bb, rb),
@@ -165,6 +166,16 @@ def add_collected_result(
         rows[history_key(out)] = out
 
 
+def collect_summary_report(
+    client: report.MinRepoClient,
+    hall: dict[str, str],
+    latest: dict[str, object],
+) -> dict[str, object]:
+    all_url = f"{str(latest['url']).rstrip('/')}/?kishu=all&sort=num"
+    rows = report.parse_all_units(client.fetch(all_url))
+    return {"hall": hall["name"], "latest": latest, "rows": rows}
+
+
 def collect_missing(
     rows: dict[tuple[str, str, str, str], dict[str, object]],
     config: dict[str, object],
@@ -183,9 +194,16 @@ def collect_missing(
                 candidates.append((hall, latest))
 
     candidates.sort(key=lambda pair: pair[1]["date"], reverse=True)
+    newest_missing: dict[str, date] = {}
+    for hall, latest in candidates:
+        newest_missing[hall["name"]] = max(newest_missing.get(hall["name"], latest["date"]), latest["date"])
     added = 0
     for hall, latest in candidates[:max_new_reports]:
-        add_collected_result(rows, collector.collect_hall_report(client, hall, latest))
+        if latest["date"] == newest_missing[hall["name"]]:
+            result = collector.collect_hall_report(client, hall, latest)
+        else:
+            result = collect_summary_report(client, hall, latest)
+        add_collected_result(rows, result)
         added += 1
     return added
 
@@ -209,8 +227,8 @@ def typed_rows(rows: dict[tuple[str, str, str, str], dict[str, object]]) -> list
         row["unit_digit"] = int(row["unit"]) % 10
         row["games"] = integer(row["games"])
         row["diff"] = integer(row["diff"])
-        row["bb"] = integer(row["bb"])
-        row["rb"] = integer(row["rb"])
+        row["bb"] = None if row.get("bb") in (None, "") else integer(row["bb"])
+        row["rb"] = None if row.get("rb") in (None, "") else integer(row["rb"])
         row["hit"] = integer(row["hit"])
         out.append(row)
     return sorted(out, key=lambda r: (r["day"], str(r["hall"]), str(r["machine"]), int(r["unit"])))
@@ -429,7 +447,7 @@ def render_analysis(rows: list[dict[str, object]], added: int) -> str:
         f"生成日時: {datetime.now(JST).strftime('%Y-%m-%d %H:%M:%S JST')}", "",
         f"対象期間: {min(dates).isoformat()}～{max(dates).isoformat()} / {len(rows):,}台分",
         f"今回追加した店舗日: {added}",
-        "当たり定義: 100G未満は0。100G以上で差枚+500以上、または3000G以上でREG 1/300以内・合算1/140以内。",
+        "当たり定義: 100G未満は0。100G以上で差枚+500以上。全期間で同じ基準を使います。",
         "0Gは差枚0・出率100%。低稼働も削除せずDBに保存します。設定を断定する指標ではありません。", "",
     ]
     for hall in halls:
@@ -544,7 +562,7 @@ def main() -> None:
     parser.add_argument("--config", default="config.json")
     parser.add_argument("--delay", type=float, default=None)
     parser.add_argument("--backfill-days", type=int, default=365)
-    parser.add_argument("--max-new-reports", type=int, default=4)
+    parser.add_argument("--max-new-reports", type=int, default=120)
     parser.add_argument("--skip-fetch", action="store_true")
     parser.add_argument("--target-date", default="")
     args = parser.parse_args()
@@ -566,4 +584,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
