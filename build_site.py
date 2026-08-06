@@ -199,8 +199,11 @@ def main() -> None:
 """
     Path("site").mkdir(exist_ok=True)
     Path("site/grape_estimates.html").write_text(html_doc, encoding="utf-8")
-    Path("site/index.html").write_text(html_doc, encoding="utf-8")
+    picks_path = Path("site/juggler_picks.html")
+    index_doc = picks_path.read_text(encoding="utf-8") if picks_path.exists() else html_doc
+    Path("site/index.html").write_text(index_doc, encoding="utf-8")
 
 
 if __name__ == "__main__":
     main()
+
