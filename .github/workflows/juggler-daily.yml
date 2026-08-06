@@ -14,7 +14,13 @@ on:
       max_new_reports:
         description: "Maximum hall-date reports per run"
         required: true
-        default: "4"
+        default: "120"
+  push:
+    branches:
+      - main
+    paths:
+      - "juggler_daily.py"
+      - ".github/workflows/juggler-daily.yml"
   schedule:
     # 10:05 JST
     - cron: "5 1 * * *"
@@ -45,7 +51,7 @@ jobs:
           python juggler_daily.py
           --delay "${{ github.event.inputs.delay_seconds || '5' }}"
           --backfill-days "${{ github.event.inputs.backfill_days || '365' }}"
-          --max-new-reports "${{ github.event.inputs.max_new_reports || '4' }}"
+          --max-new-reports "${{ github.event.inputs.max_new_reports || '120' }}"
 
       - name: Build mobile site index
         run: python build_site.py
@@ -72,4 +78,3 @@ jobs:
           path: site
 
       - uses: actions/deploy-pages@v4
-
