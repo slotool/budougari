@@ -7,8 +7,9 @@ import json
 import math
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 import grape_history_report as collector
 import latest_grape_report_impl as report
@@ -176,6 +177,57 @@ def collect_summary_report(
     return {"hall": hall["name"], "latest": latest, "rows": rows}
 
 
+def list_reports_catalog(
+    client: report.MinRepoClient,
+    hall: dict[str, str],
+    today: date,
+    days: int,
+) -> list[dict[str, object]]:
+    """List the full lookback window; the hall tag HTML only exposes its first page."""
+    fallback = collector.list_reports_from_tag(client, hall, today, days)
+    since = today - timedelta(days=days)
+    slug = urlparse(hall["tag_url"]).path.strip("/").split("/")[-1]
+    found_by_id = {str(item["id"]): item for item in fallback}
+    if not slug:
+        return sorted(found_by_id.values(), key=lambda item: item["date"])
+
+    try:
+        tags = json.loads(client.fetch(f"{report.BASE_URL}/wp-json/wp/v2/tags?slug={slug}"))
+        if not isinstance(tags, list) or not tags or not tags[0].get("id"):
+            return sorted(found_by_id.values(), key=lambda item: item["date"])
+        tag_id = int(tags[0]["id"])
+
+        for page in range(1, 7):
+            url = (
+                f"{report.BASE_URL}/wp-json/wp/v2/posts?tags={tag_id}"
+                f"&per_page=100&page={page}&_fields=id,link,title,date"
+            )
+            try:
+                posts = json.loads(client.fetch(url))
+            except Exception:
+                break
+            if not isinstance(posts, list) or not posts:
+                break
+
+            reached_older = False
+            for post in posts:
+                title = html.unescape(str(post.get("title", {}).get("rendered", "")))
+                item = collector.candidate(title, str(post.get("link", "")), hall["tag_url"], today)
+                if not item:
+                    continue
+                if item["date"] < since:
+                    reached_older = True
+                    continue
+                if item["date"] <= today:
+                    found_by_id[str(item["id"])] = item
+            if len(posts) < 100 or reached_older:
+                break
+    except Exception:
+        pass
+
+    return sorted(found_by_id.values(), key=lambda item: item["date"])
+
+
 def collect_missing(
     rows: dict[tuple[str, str, str, str], dict[str, object]],
     config: dict[str, object],
@@ -188,7 +240,7 @@ def collect_missing(
     existing_dates = {(str(r["hall"]), str(r["date"])) for r in rows.values()}
     candidates: list[tuple[dict[str, str], dict[str, object]]] = []
     for hall in config["halls"]:
-        listed = collector.list_reports_from_tag(client, hall, today, backfill_days)
+        listed = list_reports_catalog(client, hall, today, backfill_days)
         for latest in reversed(listed):
             if (hall["name"], latest["date"].isoformat()) not in existing_dates:
                 candidates.append((hall, latest))
