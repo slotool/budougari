@@ -18,7 +18,23 @@ Actions の `latest grape estimates` を手動実行すると、最新掲載日�
 - `site/grape_estimates.html`
 - `site/index.html`
 
+## ジャグラー日次分析
+
+`daily juggler analysis and picks` は毎日10:05 JSTに実行します。
+最新掲載日の台データを保存し、未取得日も新しい日から最大4店舗日ずつ補完します。
+
+- `data/juggler_history.csv`: 台番別の日次実績
+- `data/juggler_predictions.csv`: 当日予想と翌日の答え合わせ
+- `reports/juggler_analysis.md`: 曜日・日付末尾の傾向
+- `reports/juggler_picks.md`: 機種ごとの当日狙い台と根拠
+- `site/juggler_analysis.html`: スマホ用の過去傾向
+- `site/juggler_picks.html`: スマホ用の当日狙い台
+
+100G未満は低稼働として当たり0で保存します。0Gは差枚0・出率100%です。
+100G以上は削除せず、差枚・G数・BB/RBをそのまま学習材料にします。
+
 ## 前提
 
 ぶどう逆算は BB/RB、差枚、G数、リプレイ確率、チェリー・ベル・ピエロの公表値前提で推定します。
 チェリー、ベル、ピエロを実測取得しているわけではありません。
+
