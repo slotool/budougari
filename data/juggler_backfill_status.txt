@@ -1,2 +1,5 @@
-state=failed
-updated_at=2026-08-07T02:18:06Z
+state=running
+batch=1
+rows_before=33426
+rows_after=33426
+updated_at=2026-08-07T02:18:07Z
