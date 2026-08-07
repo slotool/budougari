@@ -222,6 +222,8 @@ def list_reports_catalog(
     source = client.fetch(hall["tag_url"])
     found_by_id: dict[str, dict[str, object]] = {}
     first_page = parse_catalog_page(source, hall, today)
+    if not first_page:
+        raise RuntimeError(f"過去一覧が0件です（空ページ・アクセス制限の可能性）: {hall['tag_url']}")
     for item in first_page:
         if since <= item["date"] <= today:
             found_by_id[str(item["id"])] = item
@@ -272,7 +274,7 @@ def current_backfill_batch() -> int:
 
 
 def load_report_catalog(today: date, days: int) -> dict[str, list[dict[str, object]]]:
-    if current_backfill_batch() <= 1 or not REPORT_CATALOG_JSON.exists():
+    if not REPORT_CATALOG_JSON.exists():
         return {}
     payload = json.loads(REPORT_CATALOG_JSON.read_text(encoding="utf-8"))
     if payload.get("as_of") != today.isoformat() or int(payload.get("lookback_days", 0)) < days:
