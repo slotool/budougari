@@ -15,6 +15,12 @@ on:
         description: "Maximum hall-date reports per checkpoint batch"
         required: true
         default: "30"
+  push:
+    branches:
+      - main
+    paths:
+      - "juggler_daily.py"
+      - ".github/workflows/juggler-daily.yml"
   schedule:
     # 10:05 JST
     - cron: "5 1 * * *"
@@ -89,6 +95,7 @@ jobs:
             after=$(wc -l < data/juggler_history.csv)
 
             git add data/juggler_history.csv data/juggler_predictions.csv
+            git add data/juggler_catalog_debug.json
             git add "${status_file}"
             git add reports/juggler_analysis.md reports/juggler_picks.md
             git add site/juggler_analysis.html site/juggler_picks.html site/index.html
