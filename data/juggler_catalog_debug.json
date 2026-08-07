@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-08-07T11:35:38.099645+09:00",
+  "generated_at": "2026-08-07T11:38:20.198744+09:00",
   "halls": [
     {
       "hall": "パーラーゾーン姪浜",
       "source": "cache",
-      "listed_reports": 0,
-      "oldest": null,
-      "newest": null,
-      "missing_reports": 0
+      "listed_reports": 349,
+      "oldest": "2025-08-07",
+      "newest": "2026-08-06",
+      "missing_reports": 155
     },
     {
       "hall": "アウトバーンブリッツ",
       "source": "cache",
-      "listed_reports": 0,
-      "oldest": null,
-      "newest": null,
-      "missing_reports": 0
+      "listed_reports": 353,
+      "oldest": "2025-08-07",
+      "newest": "2026-08-06",
+      "missing_reports": 154
     }
   ]
 }
