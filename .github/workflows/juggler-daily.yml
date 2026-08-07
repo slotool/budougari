@@ -53,6 +53,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           status_file="data/juggler_backfill_status.txt"
+          log_file="data/juggler_backfill_last.log"
 
           commit_status() {
             local message="$1"
@@ -65,12 +66,22 @@ jobs:
           }
 
           on_error() {
+            local exit_code="$1"
+            local failed_command="$2"
             trap - ERR
             set +e
-            printf 'state=failed\nupdated_at=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > "${status_file}"
+            {
+              printf 'state=failed\nexit_code=%s\ncommand=%s\nupdated_at=%s\n' \
+                "${exit_code}" "${failed_command}" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+              if [[ -f "${log_file}" ]]; then
+                printf '\nlast_log:\n'
+                tail -n 30 "${log_file}"
+              fi
+            } > "${status_file}"
             commit_status "Juggler backfill failed"
+            exit "${exit_code}"
           }
-          trap on_error ERR
+          trap 'on_error $? "$BASH_COMMAND"' ERR
 
           mkdir -p data
           printf 'state=running\nbatch=0\nupdated_at=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > "${status_file}"
@@ -90,7 +101,8 @@ jobs:
             python juggler_daily.py \
               --delay "${{ github.event.inputs.delay_seconds || '5' }}" \
               --backfill-days "${{ github.event.inputs.backfill_days || '365' }}" \
-              --max-new-reports "${{ github.event.inputs.max_new_reports || '30' }}"
+              --max-new-reports "${{ github.event.inputs.max_new_reports || '30' }}" \
+              2>&1 | tee "${log_file}"
             python build_site.py
             after=$(wc -l < data/juggler_history.csv)
 
