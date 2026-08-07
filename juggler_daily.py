@@ -20,6 +20,7 @@ SOURCE_HISTORY = Path("data/grape_history.csv")
 HISTORY_CSV = Path("data/juggler_history.csv")
 PREDICTIONS_CSV = Path("data/juggler_predictions.csv")
 CATALOG_DEBUG_JSON = Path("data/juggler_catalog_debug.json")
+REPORT_CATALOG_JSON = Path("data/juggler_report_catalog.json")
 LATEST_CSV = Path("exports/latest_grapes.csv")
 ANALYSIS_MD = Path("reports/juggler_analysis.md")
 PICKS_MD = Path("reports/juggler_picks.md")
@@ -178,16 +179,12 @@ def collect_summary_report(
     return {"hall": hall["name"], "latest": latest, "rows": rows}
 
 
-def list_reports_catalog(
-    client: report.MinRepoClient,
+def parse_catalog_page(
+    source: str,
     hall: dict[str, str],
     today: date,
-    days: int,
-) -> tuple[list[dict[str, object]], dict[str, object]]:
-    """List the full lookback window; the hall tag HTML only exposes its first page."""
-    since = today - timedelta(days=days)
-    source = client.fetch(hall["tag_url"])
-    found_by_id: dict[str, dict[str, object]] = {}
+) -> list[dict[str, object]]:
+    items: dict[str, dict[str, object]] = {}
     for table in report.parse_tables(source):
         if not table:
             continue
@@ -199,46 +196,49 @@ def list_reports_catalog(
                 continue
             label, href = report.split_link(row[0])
             item = collector.candidate(label, href, hall["tag_url"], today)
-            if item and since <= item["date"] <= today:
-                found_by_id[str(item["id"])] = item
+            if item:
+                items[str(item["id"])] = item
+    return sorted(items.values(), key=lambda item: item["date"])
+
+
+def list_reports_catalog(
+    client: report.MinRepoClient,
+    hall: dict[str, str],
+    today: date,
+    days: int,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """List the full lookback window; the hall tag HTML only exposes its first page."""
+    since = today - timedelta(days=days)
+    source = client.fetch(hall["tag_url"])
+    found_by_id: dict[str, dict[str, object]] = {}
+    first_page = parse_catalog_page(source, hall, today)
+    for item in first_page:
+        if since <= item["date"] <= today:
+            found_by_id[str(item["id"])] = item
 
     body_match = re.search(r"<body\b[^>]*class=(['\"])(.*?)\1", source, flags=re.IGNORECASE | re.DOTALL)
     body_classes = body_match.group(2).split() if body_match else []
     tag_ids = [int(value[4:]) for value in body_classes if re.fullmatch(r"tag-\d+", value)]
-    if not tag_ids:
-        raise RuntimeError(f"店舗タグIDが見つかりません: {hall['name']}")
-    tag_id = tag_ids[-1]
-    page_sizes: list[int] = []
+    tag_id = tag_ids[-1] if tag_ids else None
+    page_sizes = [len(first_page)]
 
-    for page in range(1, 7):
-        url = (
-            f"{report.BASE_URL}/wp-json/wp/v2/posts?tags={tag_id}"
-            f"&per_page=100&page={page}&_fields=id,link,title,date"
-        )
+    for page in range(2, 61):
+        url = f"{hall['tag_url'].rstrip('/')}/page/{page}/"
         try:
-            posts = json.loads(client.fetch(url))
-        except Exception:
-            if page == 1:
-                raise
-            break
-        if not isinstance(posts, list):
-            raise RuntimeError(f"過去一覧APIの応答形式が不正です: {hall['name']}")
-        page_sizes.append(len(posts))
-        if not posts:
+            page_source = client.fetch(url)
+        except RuntimeError as exc:
+            if "HTTP 404" in str(exc):
+                break
+            raise
+        page_items = parse_catalog_page(page_source, hall, today)
+        page_sizes.append(len(page_items))
+        if not page_items:
             break
 
-        reached_older = False
-        for post in posts:
-            title = html.unescape(str(post.get("title", {}).get("rendered", "")))
-            item = collector.candidate(title, str(post.get("link", "")), hall["tag_url"], today)
-            if not item:
-                continue
-            if item["date"] < since:
-                reached_older = True
-                continue
-            if item["date"] <= today:
+        for item in page_items:
+            if since <= item["date"] <= today:
                 found_by_id[str(item["id"])] = item
-        if len(posts) < 100 or reached_older:
+        if min(item["date"] for item in page_items) < since:
             break
 
     listed = sorted(found_by_id.values(), key=lambda item: item["date"])
@@ -253,6 +253,42 @@ def list_reports_catalog(
     }
 
 
+def current_backfill_batch() -> int:
+    status_path = Path("data/juggler_backfill_status.txt")
+    if not status_path.exists():
+        return 0
+    match = re.search(r"(?m)^batch=(\d+)$", status_path.read_text(encoding="utf-8", errors="replace"))
+    return int(match.group(1)) if match else 0
+
+
+def load_report_catalog(today: date, days: int) -> dict[str, list[dict[str, object]]]:
+    if current_backfill_batch() <= 1 or not REPORT_CATALOG_JSON.exists():
+        return {}
+    payload = json.loads(REPORT_CATALOG_JSON.read_text(encoding="utf-8"))
+    if payload.get("as_of") != today.isoformat() or int(payload.get("lookback_days", 0)) < days:
+        return {}
+    output: dict[str, list[dict[str, object]]] = {}
+    for hall, items in payload.get("halls", {}).items():
+        output[hall] = [dict(item, date=date.fromisoformat(item["date"])) for item in items]
+    return output
+
+
+def write_report_catalog(
+    catalog: dict[str, list[dict[str, object]]],
+    today: date,
+    days: int,
+) -> None:
+    payload = {
+        "as_of": today.isoformat(),
+        "lookback_days": days,
+        "halls": {
+            hall: [dict(item, date=item["date"].isoformat()) for item in items]
+            for hall, items in catalog.items()
+        },
+    }
+    REPORT_CATALOG_JSON.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def collect_missing(
     rows: dict[tuple[str, str, str, str], dict[str, object]],
     config: dict[str, object],
@@ -265,8 +301,22 @@ def collect_missing(
     existing_dates = {(str(r["hall"]), str(r["date"])) for r in rows.values()}
     candidates: list[tuple[dict[str, str], dict[str, object]]] = []
     catalog_debug: list[dict[str, object]] = []
+    catalog = load_report_catalog(today, backfill_days)
+    catalog_changed = False
     for hall in config["halls"]:
-        listed, debug = list_reports_catalog(client, hall, today, backfill_days)
+        if hall["name"] in catalog:
+            listed = catalog[hall["name"]]
+            debug = {
+                "hall": hall["name"],
+                "source": "cache",
+                "listed_reports": len(listed),
+                "oldest": listed[0]["date"].isoformat() if listed else None,
+                "newest": listed[-1]["date"].isoformat() if listed else None,
+            }
+        else:
+            listed, debug = list_reports_catalog(client, hall, today, backfill_days)
+            catalog[hall["name"]] = listed
+            catalog_changed = True
         missing_count = 0
         for latest in reversed(listed):
             if (hall["name"], latest["date"].isoformat()) not in existing_dates:
@@ -275,6 +325,9 @@ def collect_missing(
         debug["missing_reports"] = missing_count
         catalog_debug.append(debug)
 
+    if catalog_changed:
+        write_report_catalog(catalog, today, backfill_days)
+
     CATALOG_DEBUG_JSON.parent.mkdir(exist_ok=True)
     CATALOG_DEBUG_JSON.write_text(
         json.dumps({"generated_at": datetime.now(JST).isoformat(), "halls": catalog_debug}, ensure_ascii=False, indent=2),
@@ -282,15 +335,9 @@ def collect_missing(
     )
 
     candidates.sort(key=lambda pair: pair[1]["date"], reverse=True)
-    newest_missing: dict[str, date] = {}
-    for hall, latest in candidates:
-        newest_missing[hall["name"]] = max(newest_missing.get(hall["name"], latest["date"]), latest["date"])
     added = 0
     for hall, latest in candidates[:max_new_reports]:
-        if latest["date"] == newest_missing[hall["name"]]:
-            result = collector.collect_hall_report(client, hall, latest)
-        else:
-            result = collect_summary_report(client, hall, latest)
+        result = collect_summary_report(client, hall, latest)
         add_collected_result(rows, result)
         added += 1
     return added
