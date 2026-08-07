@@ -282,6 +282,8 @@ def load_report_catalog(today: date, days: int) -> dict[str, list[dict[str, obje
     output: dict[str, list[dict[str, object]]] = {}
     for hall, items in payload.get("halls", {}).items():
         output[hall] = [dict(item, date=date.fromisoformat(item["date"])) for item in items]
+    if len(output) < 2 or any(len(items) < 100 for items in output.values()):
+        return {}
     return output
 
 
@@ -290,6 +292,8 @@ def write_report_catalog(
     today: date,
     days: int,
 ) -> None:
+    if len(catalog) < 2 or any(len(items) < 100 for items in catalog.values()):
+        raise RuntimeError("過去一覧キャッシュが空または不完全なため保存しません")
     payload = {
         "as_of": today.isoformat(),
         "lookback_days": days,
