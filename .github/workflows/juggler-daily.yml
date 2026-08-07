@@ -15,12 +15,6 @@ on:
         description: "Maximum hall-date reports per run"
         required: true
         default: "120"
-  push:
-    branches:
-      - main
-    paths:
-      - "juggler_daily.py"
-      - ".github/workflows/juggler-daily.yml"
   schedule:
     # 10:05 JST
     - cron: "5 1 * * *"
