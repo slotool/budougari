@@ -1,4 +1,36 @@
-state=running
-batch=1
-rows_before=33426
-updated_at=2026-08-07T02:19:48Z
+state=failed
+exit_code=1
+command=tee "${log_file}"
+updated_at=2026-08-07T02:19:58Z
+
+last_log:
+  File "/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 401: Unauthorized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 674, in <module>
+    main()
+  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 664, in main
+    added = collect_missing(rows_by_key, config, delay, args.backfill_days, args.max_new_reports)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 269, in collect_missing
+    listed, debug = list_reports_catalog(client, hall, today, backfill_days)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 219, in list_reports_catalog
+    posts = json.loads(client.fetch(url))
+                       ^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/budougari/budougari/latest_grape_report_impl.py", line 114, in fetch
+    raise RuntimeError(f"HTTP {exc.code}: {url}") from exc
+RuntimeError: HTTP 401: https://min-repo.com/wp-json/wp/v2/posts?tags=4897&per_page=100&page=1&_fields=id,link,title,date
