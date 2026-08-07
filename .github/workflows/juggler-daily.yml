@@ -52,12 +52,40 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          status_file="data/juggler_backfill_status.txt"
+
+          commit_status() {
+            local message="$1"
+            git add "${status_file}"
+            if ! git diff --cached --quiet; then
+              git commit -m "${message}"
+              git pull --rebase -X theirs
+              git push
+            fi
+          }
+
+          on_error() {
+            trap - ERR
+            set +e
+            printf 'state=failed\nupdated_at=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > "${status_file}"
+            commit_status "Juggler backfill failed"
+          }
+          trap on_error ERR
+
+          mkdir -p data
+          printf 'state=running\nbatch=0\nupdated_at=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > "${status_file}"
+          commit_status "Start checkpointed Juggler backfill"
+
           for batch in $(seq 1 9); do
             if [[ -f data/juggler_history.csv ]]; then
               before=$(wc -l < data/juggler_history.csv)
             else
               before=0
             fi
+
+            printf 'state=running\nbatch=%s\nrows_before=%s\nupdated_at=%s\n' \
+              "${batch}" "${before}" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > "${status_file}"
+            commit_status "Start Juggler backfill batch ${batch}"
 
             python juggler_daily.py \
               --delay "${{ github.event.inputs.delay_seconds || '5' }}" \
@@ -67,8 +95,12 @@ jobs:
             after=$(wc -l < data/juggler_history.csv)
 
             git add data/juggler_history.csv data/juggler_predictions.csv
+            git add "${status_file}"
             git add reports/juggler_analysis.md reports/juggler_picks.md
             git add site/juggler_analysis.html site/juggler_picks.html site/index.html
+            printf 'state=running\nbatch=%s\nrows_before=%s\nrows_after=%s\nupdated_at=%s\n' \
+              "${batch}" "${before}" "${after}" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > "${status_file}"
+            git add "${status_file}"
             if ! git diff --cached --quiet; then
               git commit -m "Backfill Juggler history batch ${batch}"
               git pull --rebase -X theirs
@@ -80,6 +112,10 @@ jobs:
               break
             fi
           done
+
+          trap - ERR
+          printf 'state=complete\nupdated_at=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > "${status_file}"
+          commit_status "Complete checkpointed Juggler backfill"
 
       - uses: actions/configure-pages@v5
 
