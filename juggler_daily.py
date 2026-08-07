@@ -175,7 +175,13 @@ def collect_summary_report(
     hall: dict[str, str],
     latest: dict[str, object],
 ) -> dict[str, object]:
-    all_url = f"{str(latest['url']).rstrip('/')}/?kishu=all&sort=num"
+    report_url = f"{str(latest['url']).rstrip('/')}/"
+    # Min-repo can return an empty page when the filtered table is opened
+    # directly. Open the normal report first so its browsing cookie is set.
+    landing_source = client.fetch(report_url)
+    if not landing_source.strip():
+        raise RuntimeError(f"通常レポートが空です: {report_url}")
+    all_url = f"{report_url}?kishu=all&sort=num"
     source = client.fetch(all_url)
     rows = report.parse_all_units(source)
     if not rows:
@@ -319,10 +325,6 @@ def collect_missing(
     catalog_debug: list[dict[str, object]] = []
     catalog = load_report_catalog(today, backfill_days)
     catalog_changed = False
-    if catalog and not client.cookies:
-        client.fetch(config["halls"][0]["tag_url"])
-        if not client.cookies:
-            raise RuntimeError("みんレポの閲覧Cookieを取得できませんでした（空ページ・アクセス制限の可能性）")
     for hall in config["halls"]:
         if hall["name"] in catalog:
             listed = catalog[hall["name"]]
