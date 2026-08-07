@@ -319,6 +319,10 @@ def collect_missing(
     catalog_debug: list[dict[str, object]] = []
     catalog = load_report_catalog(today, backfill_days)
     catalog_changed = False
+    if catalog and not client.cookies:
+        client.fetch(config["halls"][0]["tag_url"])
+        if not client.cookies:
+            raise RuntimeError("みんレポの閲覧Cookieを取得できませんでした（空ページ・アクセス制限の可能性）")
     for hall in config["halls"]:
         if hall["name"] in catalog:
             listed = catalog[hall["name"]]
