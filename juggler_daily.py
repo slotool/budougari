@@ -21,6 +21,7 @@ HISTORY_CSV = Path("data/juggler_history.csv")
 PREDICTIONS_CSV = Path("data/juggler_predictions.csv")
 CATALOG_DEBUG_JSON = Path("data/juggler_catalog_debug.json")
 REPORT_CATALOG_JSON = Path("data/juggler_report_catalog.json")
+FAILED_PAGE_HTML = Path("data/juggler_failed_page.html")
 LATEST_CSV = Path("exports/latest_grapes.csv")
 ANALYSIS_MD = Path("reports/juggler_analysis.md")
 PICKS_MD = Path("reports/juggler_picks.md")
@@ -175,7 +176,16 @@ def collect_summary_report(
     latest: dict[str, object],
 ) -> dict[str, object]:
     all_url = f"{str(latest['url']).rstrip('/')}/?kishu=all&sort=num"
-    rows = report.parse_all_units(client.fetch(all_url))
+    source = client.fetch(all_url)
+    rows = report.parse_all_units(source)
+    if not rows:
+        FAILED_PAGE_HTML.write_text(source, encoding="utf-8")
+        headers = [
+            [report.split_link(cell)[0] for cell in table[0]]
+            for table in report.parse_tables(source)
+            if table
+        ]
+        raise RuntimeError(f"ジャグラー行が0件です: {all_url} / headers={headers[:8]}")
     return {"hall": hall["name"], "latest": latest, "rows": rows}
 
 
