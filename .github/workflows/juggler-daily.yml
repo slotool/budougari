@@ -12,9 +12,9 @@ on:
         required: true
         default: "365"
       max_new_reports:
-        description: "Maximum hall-date reports per run"
+        description: "Maximum hall-date reports per checkpoint batch"
         required: true
-        default: "260"
+        default: "30"
   push:
     branches:
       - main
@@ -32,7 +32,7 @@ permissions:
 
 concurrency:
   group: juggler-daily
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -46,30 +46,40 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Collect history, score picks, and evaluate prior picks
-        run: >
-          python juggler_daily.py
-          --delay "${{ github.event.inputs.delay_seconds || '5' }}"
-          --backfill-days "${{ github.event.inputs.backfill_days || '365' }}"
-          --max-new-reports "${{ github.event.inputs.max_new_reports || '260' }}"
-
-      - name: Build mobile site index
-        run: python build_site.py
-
-      - name: Commit daily data and reports
+      - name: Collect and checkpoint history in batches
+        shell: bash
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/juggler_history.csv data/juggler_predictions.csv
-          git add reports/juggler_analysis.md reports/juggler_picks.md
-          git add site/juggler_analysis.html site/juggler_picks.html site/index.html
-          if git diff --cached --quiet; then
-            echo "No daily Juggler changes to commit."
-          else
-            git commit -m "Update daily Juggler analysis and picks"
-            git pull --rebase -X theirs
-            git push
-          fi
+          for batch in $(seq 1 9); do
+            if [[ -f data/juggler_history.csv ]]; then
+              before=$(wc -l < data/juggler_history.csv)
+            else
+              before=0
+            fi
+
+            python juggler_daily.py \
+              --delay "${{ github.event.inputs.delay_seconds || '5' }}" \
+              --backfill-days "${{ github.event.inputs.backfill_days || '365' }}" \
+              --max-new-reports "${{ github.event.inputs.max_new_reports || '30' }}"
+            python build_site.py
+            after=$(wc -l < data/juggler_history.csv)
+
+            git add data/juggler_history.csv data/juggler_predictions.csv
+            git add reports/juggler_analysis.md reports/juggler_picks.md
+            git add site/juggler_analysis.html site/juggler_picks.html site/index.html
+            if ! git diff --cached --quiet; then
+              git commit -m "Backfill Juggler history batch ${batch}"
+              git pull --rebase -X theirs
+              git push
+            fi
+
+            echo "batch=${batch} rows_before=${before} rows_after=${after}"
+            if [[ "${after}" -le "${before}" ]]; then
+              break
+            fi
+          done
 
       - uses: actions/configure-pages@v5
 
