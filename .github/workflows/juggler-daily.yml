@@ -15,6 +15,12 @@ on:
         description: "Maximum hall-date reports per checkpoint batch"
         required: true
         default: "30"
+  push:
+    branches:
+      - main
+    paths:
+      - "juggler_daily.py"
+      - ".github/workflows/juggler-daily.yml"
   schedule:
     # 10:05 JST
     - cron: "5 1 * * *"
@@ -72,7 +78,7 @@ jobs:
                 tail -n 30 "${log_file}"
               fi
             } > "${status_file}"
-            git add data/juggler_catalog_debug.json data/juggler_report_catalog.json 2>/dev/null || true
+            git add data/juggler_catalog_debug.json data/juggler_report_catalog.json data/juggler_failed_page.html 2>/dev/null || true
             commit_status "Juggler backfill failed"
             exit "${exit_code}"
           }
