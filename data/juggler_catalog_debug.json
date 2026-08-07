@@ -1,14 +1,9 @@
 {
-  "generated_at": "2026-08-07T11:33:58.746788+09:00",
+  "generated_at": "2026-08-07T11:35:38.099645+09:00",
   "halls": [
     {
       "hall": "パーラーゾーン姪浜",
-      "tag_id": null,
-      "body_classes": [],
-      "api_page_sizes": [
-        0,
-        0
-      ],
+      "source": "cache",
       "listed_reports": 0,
       "oldest": null,
       "newest": null,
@@ -16,12 +11,7 @@
     },
     {
       "hall": "アウトバーンブリッツ",
-      "tag_id": null,
-      "body_classes": [],
-      "api_page_sizes": [
-        0,
-        0
-      ],
+      "source": "cache",
       "listed_reports": 0,
       "oldest": null,
       "newest": null,
