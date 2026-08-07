@@ -1,18 +1,3 @@
-state=failed
-exit_code=1
-command=tee "${log_file}"
-updated_at=2026-08-07T02:38:20Z
-
-last_log:
-Traceback (most recent call last):
-  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 737, in <module>
-    main()
-  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 727, in main
-    added = collect_missing(rows_by_key, config, delay, args.backfill_days, args.max_new_reports)
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 356, in collect_missing
-    result = collect_summary_report(client, hall, latest)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 188, in collect_summary_report
-    raise RuntimeError(f"ジャグラー行が0件です: {all_url} / headers={headers[:8]}")
-RuntimeError: ジャグラー行が0件です: https://min-repo.com/3271845/?kishu=all&sort=num / headers=[]
+state=running
+batch=0
+updated_at=2026-08-07T02:44:07Z
