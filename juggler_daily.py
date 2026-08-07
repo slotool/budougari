@@ -19,6 +19,7 @@ JST = report.JST
 SOURCE_HISTORY = Path("data/grape_history.csv")
 HISTORY_CSV = Path("data/juggler_history.csv")
 PREDICTIONS_CSV = Path("data/juggler_predictions.csv")
+CATALOG_DEBUG_JSON = Path("data/juggler_catalog_debug.json")
 LATEST_CSV = Path("exports/latest_grapes.csv")
 ANALYSIS_MD = Path("reports/juggler_analysis.md")
 PICKS_MD = Path("reports/juggler_picks.md")
@@ -182,7 +183,7 @@ def list_reports_catalog(
     hall: dict[str, str],
     today: date,
     days: int,
-) -> list[dict[str, object]]:
+) -> tuple[list[dict[str, object]], dict[str, object]]:
     """List the full lookback window; the hall tag HTML only exposes its first page."""
     since = today - timedelta(days=days)
     source = client.fetch(hall["tag_url"])
@@ -201,10 +202,13 @@ def list_reports_catalog(
             if item and since <= item["date"] <= today:
                 found_by_id[str(item["id"])] = item
 
-    tag_match = re.search(r"\btag-(\d+)\b", source)
-    if not tag_match:
+    body_match = re.search(r"<body\b[^>]*class=(['\"])(.*?)\1", source, flags=re.IGNORECASE | re.DOTALL)
+    body_classes = body_match.group(2).split() if body_match else []
+    tag_ids = [int(value[4:]) for value in body_classes if re.fullmatch(r"tag-\d+", value)]
+    if not tag_ids:
         raise RuntimeError(f"店舗タグIDが見つかりません: {hall['name']}")
-    tag_id = int(tag_match.group(1))
+    tag_id = tag_ids[-1]
+    page_sizes: list[int] = []
 
     for page in range(1, 7):
         url = (
@@ -219,6 +223,7 @@ def list_reports_catalog(
             break
         if not isinstance(posts, list):
             raise RuntimeError(f"過去一覧APIの応答形式が不正です: {hall['name']}")
+        page_sizes.append(len(posts))
         if not posts:
             break
 
@@ -236,7 +241,16 @@ def list_reports_catalog(
         if len(posts) < 100 or reached_older:
             break
 
-    return sorted(found_by_id.values(), key=lambda item: item["date"])
+    listed = sorted(found_by_id.values(), key=lambda item: item["date"])
+    return listed, {
+        "hall": hall["name"],
+        "tag_id": tag_id,
+        "body_classes": body_classes,
+        "api_page_sizes": page_sizes,
+        "listed_reports": len(listed),
+        "oldest": listed[0]["date"].isoformat() if listed else None,
+        "newest": listed[-1]["date"].isoformat() if listed else None,
+    }
 
 
 def collect_missing(
@@ -250,11 +264,22 @@ def collect_missing(
     today = datetime.now(JST).date()
     existing_dates = {(str(r["hall"]), str(r["date"])) for r in rows.values()}
     candidates: list[tuple[dict[str, str], dict[str, object]]] = []
+    catalog_debug: list[dict[str, object]] = []
     for hall in config["halls"]:
-        listed = list_reports_catalog(client, hall, today, backfill_days)
+        listed, debug = list_reports_catalog(client, hall, today, backfill_days)
+        missing_count = 0
         for latest in reversed(listed):
             if (hall["name"], latest["date"].isoformat()) not in existing_dates:
                 candidates.append((hall, latest))
+                missing_count += 1
+        debug["missing_reports"] = missing_count
+        catalog_debug.append(debug)
+
+    CATALOG_DEBUG_JSON.parent.mkdir(exist_ok=True)
+    CATALOG_DEBUG_JSON.write_text(
+        json.dumps({"generated_at": datetime.now(JST).isoformat(), "halls": catalog_debug}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     candidates.sort(key=lambda pair: pair[1]["date"], reverse=True)
     newest_missing: dict[str, date] = {}
