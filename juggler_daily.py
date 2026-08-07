@@ -599,11 +599,12 @@ def render_analysis(rows: list[dict[str, object]], added: int) -> str:
     weekdays, digits = condition_tables(rows)
     dates = [r["day"] for r in rows]
     halls = sorted(set(str(r["hall"]) for r in rows))
+    learned_hall_dates = {(str(r["hall"]), str(r["date"])) for r in rows}
     lines = [
         "# ジャグラー過去傾向分析", "",
         f"生成日時: {datetime.now(JST).strftime('%Y-%m-%d %H:%M:%S JST')}", "",
         f"対象期間: {min(dates).isoformat()}～{max(dates).isoformat()} / {len(rows):,}台分",
-        f"今回追加した店舗日: {added}",
+        f"学習済み: {len(rows):,}台 / {len(learned_hall_dates):,}店舗日",
         "当たり定義: 100G未満は0。100G以上で差枚+500以上。全期間で同じ基準を使います。",
         "0Gは差枚0・出率100%。低稼働も削除せずDBに保存します。設定を断定する指標ではありません。", "",
     ]
