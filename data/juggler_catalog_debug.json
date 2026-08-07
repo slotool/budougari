@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-07T12:42:08.078763+09:00",
+  "generated_at": "2026-08-07T12:48:28.467487+09:00",
   "halls": [
     {
       "hall": "パーラーゾーン姪浜",
@@ -7,7 +7,7 @@
       "listed_reports": 349,
       "oldest": "2025-08-07",
       "newest": "2026-08-06",
-      "missing_reports": 79
+      "missing_reports": 64
     },
     {
       "hall": "アウトバーンブリッツ",
@@ -15,7 +15,7 @@
       "listed_reports": 353,
       "oldest": "2025-08-07",
       "newest": "2026-08-06",
-      "missing_reports": 79
+      "missing_reports": 64
     }
   ]
 }
