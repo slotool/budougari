@@ -627,6 +627,73 @@ def target_short_features(
     }
 
 
+def feedback_key(label: str) -> str:
+    label = label.split(" [答え合わせ", 1)[0].strip()
+    if ":" in label and not label.startswith(("店舗ルール:", "日曜補正:")):
+        label = label.split(":", 1)[0].strip()
+    if re.fullmatch(r"[月火水木金土日]曜×機種", label):
+        return "曜日×機種"
+    if re.fullmatch(r"[月火水木金土日]曜×台番", label):
+        return "曜日×台番"
+    if re.fullmatch(r"\dの日×機種", label):
+        return "日付×機種"
+    if re.fullmatch(r"\dの日×台番", label):
+        return "日付×台番"
+    return label
+
+
+def prediction_feedback(
+    predictions: list[dict[str, object]],
+) -> tuple[dict[str, float], list[dict[str, object]]]:
+    evaluated = [row for row in predictions if str(row.get("result_hit", "")) != ""]
+    if not evaluated:
+        return {}, []
+    base_rate = sum(integer(row["result_hit"]) for row in evaluated) / len(evaluated)
+    grouped: dict[str, dict[str, float]] = defaultdict(lambda: {"count": 0, "hits": 0, "diff": 0})
+    for row in evaluated:
+        keys = {
+            feedback_key(reason.strip())
+            for reason in str(row.get("reasons", "")).split(" / ")
+            if reason.strip()
+        }
+        for key in keys:
+            grouped[key]["count"] += 1
+            grouped[key]["hits"] += integer(row["result_hit"])
+            grouped[key]["diff"] += integer(row.get("result_diff"))
+
+    multipliers: dict[str, float] = {}
+    details: list[dict[str, object]] = []
+    prior_count = 20.0
+    for key, values in grouped.items():
+        count = int(values["count"])
+        if count < 8:
+            continue
+        hit_rate = values["hits"] / count
+        avg_diff = values["diff"] / count
+        smoothed_rate = (values["hits"] + base_rate * prior_count) / (count + prior_count)
+        hit_signal = (smoothed_rate - base_rate) * 1.5
+        diff_signal = max(-0.15, min(0.15, avg_diff / 12000))
+        multiplier = round(max(0.75, min(1.25, 1.0 + hit_signal + diff_signal)), 3)
+        multipliers[key] = multiplier
+        details.append({
+            "key": key,
+            "count": count,
+            "hit_rate": hit_rate,
+            "avg_diff": avg_diff,
+            "multiplier": multiplier,
+        })
+    details.sort(key=lambda item: (-abs(float(item["multiplier"]) - 1.0), -int(item["count"]), str(item["key"])))
+    return multipliers, details
+
+
+def apply_feedback(points: float, reason: str, label: str, multipliers: dict[str, float]) -> tuple[float, str]:
+    multiplier = multipliers.get(feedback_key(label), 1.0)
+    adjusted = points * multiplier
+    if abs(multiplier - 1.0) >= 0.03:
+        reason = f"{reason} [答え合わせ×{multiplier:.2f}]"
+    return adjusted, reason
+
+
 def latest_inventory(rows: list[dict[str, object]]) -> dict[str, list[dict[str, object]]]:
     latest_by_hall: dict[str, date] = {}
     for row in rows:
@@ -680,10 +747,15 @@ def rule_points(hall: str, target: date, previous: dict[str, object] | None) -> 
     return points, reasons
 
 
-def make_picks(rows: list[dict[str, object]], target: date) -> list[dict[str, object]]:
+def make_picks(
+    rows: list[dict[str, object]],
+    target: date,
+    predictions: list[dict[str, object]] | None = None,
+) -> list[dict[str, object]]:
     training = [r for r in rows if r["day"] < target]
     features = build_feature_stats(training)
     short_stats, _ = build_short_feature_stats(training)
+    feedback, _ = prediction_feedback(predictions or [])
     inventories = latest_inventory(training)
     all_candidates = [candidate for candidates in inventories.values() for candidate in candidates]
     current_short = target_short_features(training, all_candidates, target)
@@ -712,6 +784,7 @@ def make_picks(rows: list[dict[str, object]], target: date) -> list[dict[str, ob
                 item = contribution(features[feature_name].get(key), base, label, strength)
                 if item:
                     points, reason = item
+                    points, reason = apply_feedback(points, reason, label, feedback)
                     score += points
                     reasons.append((abs(points), reason))
 
@@ -725,6 +798,7 @@ def make_picks(rows: list[dict[str, object]], target: date) -> list[dict[str, ob
                     item = contribution(learned, base, label, strength=0.9, min_count=15)
                     if item:
                         points, reason = item
+                        points, reason = apply_feedback(points, reason, label, feedback)
                         short_by_group[group].append((abs(points), points, reason))
             group_limits = {
                 "lag_state": 2,
@@ -745,6 +819,11 @@ def make_picks(rows: list[dict[str, object]], target: date) -> list[dict[str, ob
             reasons.extend((item[0], item[2]) for item in selected_short[:6])
             prev = previous.get((hall, unit))
             rule_score, rule_reasons = rule_points(hall, target, prev)
+            if rule_reasons:
+                rule_multiplier = sum(feedback.get(feedback_key(text), 1.0) for text in rule_reasons) / len(rule_reasons)
+                rule_score *= rule_multiplier
+                if abs(rule_multiplier - 1.0) >= 0.03:
+                    rule_reasons = [f"{text} [答え合わせ×{rule_multiplier:.2f}]" for text in rule_reasons]
             score += rule_score
             reasons.extend((abs(rule_score), text) for text in rule_reasons)
             if tails and int(unit) % 10 in tails:
@@ -769,7 +848,9 @@ def load_predictions() -> list[dict[str, str]]:
     return read_csv(PREDICTIONS_CSV)
 
 
-def update_predictions(predictions: list[dict[str, str]], picks: list[dict[str, object]], rows: list[dict[str, object]], target: date) -> list[dict[str, object]]:
+def evaluate_predictions(
+    predictions: list[dict[str, object]], rows: list[dict[str, object]]
+) -> list[dict[str, object]]:
     actual = {(str(r["hall"]), str(r["date"]), str(r["machine"]), str(r["unit"])): r for r in rows}
     stamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S%z")
     updated: list[dict[str, object]] = []
@@ -783,7 +864,16 @@ def update_predictions(predictions: list[dict[str, str]], picks: list[dict[str, 
                 "result_bb": result["bb"], "result_rb": result["rb"],
                 "result_hit": result["hit"], "evaluated_at": stamp,
             })
-        if old["prediction_date"] != target.isoformat():
+        updated.append(row)
+    return updated
+
+
+def update_predictions(predictions: list[dict[str, object]], picks: list[dict[str, object]], rows: list[dict[str, object]], target: date) -> list[dict[str, object]]:
+    predictions = evaluate_predictions(predictions, rows)
+    updated: list[dict[str, object]] = []
+    stamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S%z")
+    for row in predictions:
+        if row["prediction_date"] != target.isoformat():
             updated.append(row)
     for pick in picks:
         updated.append({
@@ -862,6 +952,9 @@ def render_analysis(rows: list[dict[str, object]], added: int) -> str:
 
 def render_picks(picks: list[dict[str, object]], predictions: list[dict[str, object]], target: date) -> str:
     evaluated, hit_count, hit_rate, avg_diff = prediction_summary(predictions)
+    _, feedback_details = prediction_feedback(predictions)
+    strengthened = [item for item in feedback_details if float(item["multiplier"]) >= 1.03][:5]
+    weakened = [item for item in feedback_details if float(item["multiplier"]) <= 0.97][:5]
     lines = [
         f"# {target.isoformat()} ジャグラー狙い台", "",
         f"生成日時: {datetime.now(JST).strftime('%Y-%m-%d %H:%M:%S JST')}", "",
@@ -871,6 +964,14 @@ def render_picks(picks: list[dict[str, object]], predictions: list[dict[str, obj
         f"- 評価済み予想: {evaluated}",
         f"- 的中: {hit_count} ({hit_rate * 100:.1f}%)" if evaluated else "- 的中: まだ評価データなし",
         f"- 平均差枚: {avg_diff:+.0f}" if evaluated else "- 平均差枚: -", "",
+        "## 答え合わせ自動補正", "",
+        "8件以上評価できた根拠だけを0.75～1.25倍で補正。件数が少ない条件は補正しません。",
+        "- 強化: " + (" / ".join(
+            f"{item['key']}×{float(item['multiplier']):.2f} ({int(item['count'])}件)" for item in strengthened
+        ) if strengthened else "まだなし"),
+        "- 抑制: " + (" / ".join(
+            f"{item['key']}×{float(item['multiplier']):.2f} ({int(item['count'])}件)" for item in weakened
+        ) if weakened else "まだなし"), "",
     ]
     current_hall = current_machine = None
     for pick in picks:
@@ -970,8 +1071,9 @@ def main() -> None:
     write_history(rows_by_key)
     rows = typed_rows(rows_by_key)
     target = date.fromisoformat(args.target_date) if args.target_date else datetime.now(JST).date()
-    picks = make_picks(rows, target)
-    predictions = update_predictions(load_predictions(), picks, rows, target)
+    evaluated_predictions = evaluate_predictions(load_predictions(), rows)
+    picks = make_picks(rows, target, evaluated_predictions)
+    predictions = update_predictions(evaluated_predictions, picks, rows, target)
     write_reports(rows, picks, predictions, target, added)
 
 
