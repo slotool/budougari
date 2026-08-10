@@ -38,6 +38,8 @@ PREDICTION_FIELDS = [
     "result_rb", "result_hit", "evaluated_at",
 ]
 WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
+SHORT_WINDOWS = (3, 5, 7, 10, 14)
+LAG_LABELS = {1: "前日", 2: "前々日", 3: "3日前"}
 
 
 @dataclass
@@ -436,14 +438,88 @@ def build_feature_stats(rows: list[dict[str, object]]) -> dict[str, dict[object,
     }
 
 
-def contribution(stats: Stats | None, base: Stats, label: str, strength: float = 1.0) -> tuple[float, str] | None:
-    if stats is None or stats.count < 5:
+def contribution(
+    stats: Stats | None,
+    base: Stats,
+    label: str,
+    strength: float = 1.0,
+    min_count: int = 5,
+) -> tuple[float, str] | None:
+    if stats is None or stats.count < min_count:
         return None
     weight = stats.count / (stats.count + 20)
     hit_points = (stats.hit_rate - base.hit_rate) * 42 * weight * strength
     diff_points = max(-4.0, min(4.0, (stats.avg_diff - base.avg_diff) / 180)) * weight * strength
     points = hit_points + diff_points
     return points, f"{label}: 当たり{stats.hit_rate * 100:.0f}% ({stats.count}件)"
+
+
+def diff_state(diff: int) -> tuple[str, str]:
+    if diff <= -500:
+        return "down", "凹み"
+    if diff >= 500:
+        return "up", "好調"
+    return "flat", "中間"
+
+
+def add_short_feature(
+    row: dict[str, object], feature_id: str, label: str, group: str
+) -> None:
+    row.setdefault("_short_features", []).append((feature_id, label, group))
+
+
+def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Attach prior-only features to each row without looking at its outcome."""
+    histories: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
+    rows_by_day: dict[date, list[dict[str, object]]] = defaultdict(list)
+    for row in rows:
+        rows_by_day[row["day"]].append(row)
+
+    enriched: list[dict[str, object]] = []
+    for day in sorted(rows_by_day):
+        current: list[dict[str, object]] = []
+        for original in rows_by_day[day]:
+            row = dict(original)
+            row["_short_features"] = []
+            history = histories[(str(row["hall"]), str(row["unit"]))]
+            lag_diffs: dict[int, int] = {}
+            rolling_sums: dict[int, int] = {}
+
+            for lag, lag_label in LAG_LABELS.items():
+                if len(history) < lag:
+                    continue
+                prior = history[-lag]
+                prior_diff = int(prior["diff"])
+                lag_diffs[lag] = prior_diff
+                state_id, state_label = diff_state(prior_diff)
+                add_short_feature(row, f"lag{lag}_{state_id}", f"{lag_label}{state_label}", "lag_state")
+                if int(prior["games"]) < 100:
+                    add_short_feature(row, f"lag{lag}_low_activity", f"{lag_label}低稼働", "lag_state")
+
+            if len(history) >= 2:
+                newest_state = diff_state(int(history[-1]["diff"]))[0]
+                older_state = diff_state(int(history[-2]["diff"]))[0]
+                if newest_state == older_state == "down":
+                    add_short_feature(row, "down_streak_2", "2日連続凹み", "pattern")
+                if newest_state == older_state == "up":
+                    add_short_feature(row, "up_streak_2", "2日連続好調", "pattern")
+                if newest_state == "down" and older_state == "up":
+                    add_short_feature(row, "up_to_down", "前々日好調→前日凹み", "pattern")
+                if newest_state == "up" and older_state == "down":
+                    add_short_feature(row, "down_to_up", "前々日凹み→前日好調", "pattern")
+
+            if len(history) >= 3:
+                states = [diff_state(int(prior["diff"]))[0] for prior in history[-3:]]
+                diffs = [int(prio…1310 tokens truncated…n candidates:
+        row = dict(candidate)
+        row.update({"day": target, "date": target.isoformat(), "_target_short_feature": True})
+        placeholders.append(row)
+    enriched = temporal_feature_rows(training + placeholders)
+    return {
+        (str(row["hall"]), str(row["unit"])): row
+        for row in enriched
+        if row.get("_target_short_feature")
+    }
 
 
 def latest_inventory(rows: list[dict[str, object]]) -> dict[str, list[dict[str, object]]]:
@@ -502,7 +578,10 @@ def rule_points(hall: str, target: date, previous: dict[str, object] | None) -> 
 def make_picks(rows: list[dict[str, object]], target: date) -> list[dict[str, object]]:
     training = [r for r in rows if r["day"] < target]
     features = build_feature_stats(training)
+    short_stats, _ = build_short_feature_stats(training)
     inventories = latest_inventory(training)
+    all_candidates = [candidate for candidates in inventories.values() for candidate in candidates]
+    current_short = target_short_features(training, all_candidates, target)
     previous = previous_by_unit(training)
     picks: list[dict[str, object]] = []
     for hall, candidates in inventories.items():
@@ -530,6 +609,35 @@ def make_picks(rows: list[dict[str, object]], target: date) -> list[dict[str, ob
                     points, reason = item
                     score += points
                     reasons.append((abs(points), reason))
+
+            short_row = current_short.get((hall, unit))
+            short_by_group: dict[str, list[tuple[float, float, str]]] = defaultdict(list)
+            if short_row:
+                for feature_id, label, group in short_row["_short_features"]:
+                    learned = short_stats["machine"].get((hall, machine, feature_id))
+                    if learned is None or learned.count < 15:
+                        learned = short_stats["hall"].get((hall, feature_id))
+                    item = contribution(learned, base, label, strength=0.9, min_count=15)
+                    if item:
+                        points, reason = item
+                        short_by_group[group].append((abs(points), points, reason))
+            group_limits = {
+                "lag_state": 2,
+                "lag_rank": 2,
+                "rolling_state": 1,
+                "rolling_hits": 1,
+                "rolling_rank": 2,
+                "pattern": 2,
+                "drought": 1,
+            }
+            selected_short = []
+            for group, learned_items in short_by_group.items():
+                learned_items.sort(reverse=True)
+                selected_short.extend(learned_items[:group_limits.get(group, 1)])
+            selected_short.sort(reverse=True)
+            short_points = max(-12.0, min(12.0, sum(item[1] for item in selected_short)))
+            score += short_points
+            reasons.extend((item[0], item[2]) for item in selected_short[:6])
             prev = previous.get((hall, unit))
             rule_score, rule_reasons = rule_points(hall, target, prev)
             score += rule_score
@@ -597,6 +705,7 @@ def prediction_summary(predictions: list[dict[str, object]]) -> tuple[int, int, 
 
 def render_analysis(rows: list[dict[str, object]], added: int) -> str:
     weekdays, digits = condition_tables(rows)
+    short_stats, short_labels = build_short_feature_stats(rows)
     dates = [r["day"] for r in rows]
     halls = sorted(set(str(r["hall"]) for r in rows))
     learned_hall_dates = {(str(r["hall"]), str(r["date"])) for r in rows}
@@ -622,6 +731,27 @@ def render_analysis(rows: list[dict[str, object]], added: int) -> str:
         lines.extend(["", "### 日付の一の位別", "", "| 一の位 | 台データ | 当たり率 | 平均差枚 | 合算 | REG | 信頼度 |", "|---|---:|---:|---:|---:|---:|---|"])
         for digit in range(10):
             lines.append(stats_row(str(digit), digits.get((hall, digit), Stats())))
+        base = aggregate([row for row in rows if row["hall"] == hall], lambda row: row["hall"]).get(hall, Stats())
+        hall_short = [
+            (feature_id, stats)
+            for (feature_hall, feature_id), stats in short_stats["hall"].items()
+            if feature_hall == hall and stats.count >= 20
+        ]
+        hall_short.sort(
+            key=lambda item: (
+                -abs(item[1].hit_rate - base.hit_rate),
+                -item[1].count,
+                short_labels.get(item[0], item[0]),
+            )
+        )
+        lines.extend([
+            "", "### 短期履歴傾向", "",
+            "前日・前々日・3日前、連続傾向、直近3/5/7/10/14掲載日の累計差枚・当たり回数・機種内順位を学習。",
+            "| 条件 | 台データ | 当たり率 | 平均差枚 | 合算 | REG | 信頼度 |",
+            "|---|---:|---:|---:|---:|---:|---|",
+        ])
+        for feature_id, stats in hall_short[:40]:
+            lines.append(stats_row(short_labels.get(feature_id, feature_id), stats))
     return "\n".join(lines)
 
 
@@ -742,3 +872,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
