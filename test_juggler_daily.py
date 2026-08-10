@@ -51,6 +51,27 @@ class TemporalFeatureTests(unittest.TestCase):
             self.assertIn(f"roll{window}_worst", by_unit["1"])
             self.assertIn(f"roll{window}_best", by_unit["2"])
 
+    def test_answer_feedback_strengthens_hits_and_weakens_misses(self) -> None:
+        predictions = []
+        for index in range(10):
+            predictions.append({
+                "result_hit": 1,
+                "result_diff": 1500,
+                "reasons": "前日凹み: 当たり30% (100件)",
+            })
+            predictions.append({
+                "result_hit": 0,
+                "result_diff": -1500,
+                "reasons": "前日好調: 当たり20% (100件)",
+            })
+
+        multipliers, _ = daily.prediction_feedback(predictions)
+
+        self.assertGreater(multipliers["前日凹み"], 1.0)
+        self.assertLess(multipliers["前日好調"], 1.0)
+        self.assertGreaterEqual(multipliers["前日好調"], 0.75)
+        self.assertLessEqual(multipliers["前日凹み"], 1.25)
+
 
 if __name__ == "__main__":
     unittest.main()
