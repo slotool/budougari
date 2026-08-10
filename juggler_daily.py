@@ -510,7 +510,112 @@ def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, objec
 
             if len(history) >= 3:
                 states = [diff_state(int(prior["diff"]))[0] for prior in history[-3:]]
-                diffs = [int(prio…1310 tokens truncated…n candidates:
+                diffs = [int(prior["diff"]) for prior in history[-3:]]
+                if all(state == "down" for state in states):
+                    add_short_feature(row, "down_streak_3", "3日連続凹み", "pattern")
+                if all(state == "up" for state in states):
+                    add_short_feature(row, "up_streak_3", "3日連続好調", "pattern")
+                if diffs[0] < diffs[1] < diffs[2]:
+                    add_short_feature(row, "diff_rising_3", "3日連続差枚上昇", "pattern")
+                if diffs[0] > diffs[1] > diffs[2]:
+                    add_short_feature(row, "diff_falling_3", "3日連続差枚下降", "pattern")
+
+            hit_distance = next(
+                (distance for distance, prior in enumerate(reversed(history), 1) if int(prior["hit"])),
+                None,
+            )
+            if history:
+                if hit_distance is None or hit_distance >= 10:
+                    add_short_feature(row, "hit_gap_10", "当たり間隔10日以上", "drought")
+                elif hit_distance >= 5:
+                    add_short_feature(row, "hit_gap_5", "当たり間隔5～9日", "drought")
+                elif hit_distance >= 3:
+                    add_short_feature(row, "hit_gap_3", "当たり間隔3～4日", "drought")
+
+            for window in SHORT_WINDOWS:
+                if len(history) < window:
+                    continue
+                recent = history[-window:]
+                rolling_sum = sum(int(prior["diff"]) for prior in recent)
+                rolling_sums[window] = rolling_sum
+                sum_state = "minus" if rolling_sum < 0 else "plus"
+                sum_label = "マイナス" if rolling_sum < 0 else "プラス"
+                add_short_feature(
+                    row, f"roll{window}_{sum_state}", f"直近{window}日累計{sum_label}", "rolling_state"
+                )
+                hit_count = sum(int(prior["hit"]) for prior in recent)
+                if hit_count == 0:
+                    hit_bucket, hit_label = "0", "0回"
+                elif hit_count == 1:
+                    hit_bucket, hit_label = "1", "1回"
+                else:
+                    hit_bucket, hit_label = "2plus", "2回以上"
+                add_short_feature(
+                    row, f"hits{window}_{hit_bucket}", f"直近{window}日当たり{hit_label}", "rolling_hits"
+                )
+
+            row["_lag_diffs"] = lag_diffs
+            row["_rolling_sums"] = rolling_sums
+            current.append(row)
+
+        machine_groups: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
+        for row in current:
+            machine_groups[(str(row["hall"]), str(row["machine"]))].append(row)
+        for group_rows in machine_groups.values():
+            if len(group_rows) < 2:
+                continue
+            for lag, lag_label in LAG_LABELS.items():
+                ranked = [row for row in group_rows if lag in row["_lag_diffs"]]
+                values = [int(row["_lag_diffs"][lag]) for row in ranked]
+                if len(ranked) < 2 or min(values) == max(values):
+                    continue
+                for row in ranked:
+                    value = int(row["_lag_diffs"][lag])
+                    if value == min(values):
+                        add_short_feature(row, f"lag{lag}_worst", f"{lag_label}ワースト", "lag_rank")
+                    if value == max(values):
+                        add_short_feature(row, f"lag{lag}_best", f"{lag_label}ベスト", "lag_rank")
+            for window in SHORT_WINDOWS:
+                ranked = [row for row in group_rows if window in row["_rolling_sums"]]
+                values = [int(row["_rolling_sums"][window]) for row in ranked]
+                if len(ranked) < 2 or min(values) == max(values):
+                    continue
+                for row in ranked:
+                    value = int(row["_rolling_sums"][window])
+                    if value == min(values):
+                        add_short_feature(row, f"roll{window}_worst", f"{window}日差枚ワースト", "rolling_rank")
+                    if value == max(values):
+                        add_short_feature(row, f"roll{window}_best", f"{window}日差枚ベスト", "rolling_rank")
+
+        enriched.extend(current)
+        for original in rows_by_day[day]:
+            histories[(str(original["hall"]), str(original["unit"]))].append(original)
+    return enriched
+
+
+def build_short_feature_stats(
+    rows: list[dict[str, object]],
+) -> tuple[dict[str, dict[object, Stats]], dict[str, str]]:
+    feature_stats: dict[str, dict[object, Stats]] = {
+        "hall": defaultdict(Stats),
+        "machine": defaultdict(Stats),
+    }
+    labels: dict[str, str] = {}
+    for row in temporal_feature_rows(rows):
+        for feature_id, label, _ in row["_short_features"]:
+            labels[feature_id] = label
+            feature_stats["hall"][(row["hall"], feature_id)].add(row)
+            feature_stats["machine"][(row["hall"], row["machine"], feature_id)].add(row)
+    return feature_stats, labels
+
+
+def target_short_features(
+    training: list[dict[str, object]],
+    candidates: list[dict[str, object]],
+    target: date,
+) -> dict[tuple[str, str], dict[str, object]]:
+    placeholders = []
+    for candidate in candidates:
         row = dict(candidate)
         row.update({"day": target, "date": target.isoformat(), "_target_short_feature": True})
         placeholders.append(row)
@@ -872,4 +977,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
