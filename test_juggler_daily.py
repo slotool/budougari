@@ -72,6 +72,62 @@ class TemporalFeatureTests(unittest.TestCase):
         self.assertGreaterEqual(multipliers["前日好調"], 0.75)
         self.assertLessEqual(multipliers["前日凹み"], 1.25)
 
+    def test_automatic_features_combine_context_and_different_history_groups(self) -> None:
+        row = sample_row(date(2026, 1, 8), 17, 0)
+        row.update({
+            "weekday": 3,
+            "day_digit": 8,
+            "unit_digit": 7,
+            "_short_features": [
+                ("lag1_down", "前日凹み", "lag_state"),
+                ("roll7_worst", "7日差枚ワースト", "rolling_rank"),
+            ],
+        })
+        labels = dict(daily.automatic_features(row))
+
+        self.assertIn("lag1_down__weekday_3", labels)
+        self.assertIn("lag1_down__roll7_worst", labels)
+        self.assertIn("前日凹み", labels["lag1_down__weekday_3"])
+
+    def test_discovered_contribution_requires_enough_positive_evidence(self) -> None:
+        base = daily.Stats(count=100, hits=20, diff_sum=0)
+        strong = daily.Stats(count=40, hits=16, diff_sum=24000)
+        weak_sample = daily.Stats(count=10, hits=8, diff_sum=30000)
+
+        accepted = daily.discovered_contribution(strong, base, "木曜 × 前日凹み", {})
+        rejected = daily.discovered_contribution(weak_sample, base, "木曜 × 前日凹み", {})
+
+        self.assertIsNotNone(accepted)
+        self.assertIn("平均差枚+600", accepted[1])
+        self.assertIsNone(rejected)
+
+    def test_target_features_use_prediction_date_context(self) -> None:
+        history_day = date(2026, 1, 6)
+        target_day = date(2026, 1, 12)
+        prior = sample_row(history_day, 17, -1000)
+        candidate = sample_row(history_day, 17, -1000)
+
+        target = daily.target_short_features([prior], [candidate], target_day)[("テスト店", "17")]
+
+        self.assertEqual(target["weekday"], target_day.weekday())
+        self.assertEqual(target["day_digit"], 2)
+        labels = dict(daily.automatic_features(target))
+        self.assertTrue(any("2の日" in label for label in labels.values()))
+        self.assertFalse(any("6の日" in label for label in labels.values()))
+
+    def test_single_conditions_are_derived_from_numeric_distribution(self) -> None:
+        rows = []
+        for value in range(100):
+            row = sample_row(date(2026, 1, 1), value + 1, 0)
+            row["_auto_numeric"] = {"lag1_diff": float(value * 100 - 5000)}
+            rows.append(row)
+
+        definitions = daily.build_auto_single_definitions(rows)
+        labels = [str(item["label"]) for item in definitions["テスト店"]]
+
+        self.assertTrue(any("前日差枚" in label and "以下" in label for label in labels))
+        self.assertTrue(any("前日差枚" in label and "以上" in label for label in labels))
+
 
 if __name__ == "__main__":
     unittest.main()
