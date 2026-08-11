@@ -40,6 +40,20 @@ PREDICTION_FIELDS = [
 WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
 SHORT_WINDOWS = (3, 5, 7, 10, 14)
 LAG_LABELS = {1: "前日", 2: "前々日", 3: "3日前"}
+AUTO_MIN_COUNT = 30
+AUTO_MAX_POINTS = 8.0
+AUTO_SINGLE_QUANTILES = (0.15, 0.30, 0.70, 0.85)
+AUTO_CONTEXT_GROUPS = frozenset({"weekday", "date_digit", "unit_tail"})
+AUTO_HISTORY_GROUP_PAIRS = frozenset({
+    frozenset(("lag_state", "rolling_state")),
+    frozenset(("lag_state", "rolling_rank")),
+    frozenset(("lag_rank", "rolling_state")),
+    frozenset(("lag_rank", "rolling_hits")),
+    frozenset(("pattern", "rolling_state")),
+    frozenset(("pattern", "rolling_rank")),
+    frozenset(("drought", "rolling_state")),
+    frozenset(("drought", "rolling_rank")),
+})
 
 
 @dataclass
@@ -484,6 +498,7 @@ def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, objec
             history = histories[(str(row["hall"]), str(row["unit"]))]
             lag_diffs: dict[int, int] = {}
             rolling_sums: dict[int, int] = {}
+            auto_numeric: dict[str, float] = {}
 
             for lag, lag_label in LAG_LABELS.items():
                 if len(history) < lag:
@@ -491,6 +506,14 @@ def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, objec
                 prior = history[-lag]
                 prior_diff = int(prior["diff"])
                 lag_diffs[lag] = prior_diff
+                auto_numeric[f"lag{lag}_diff"] = prior_diff
+                auto_numeric[f"lag{lag}_games"] = int(prior["games"])
+                if isinstance(prior.get("rb"), int) and int(prior["rb"]) > 0:
+                    auto_numeric[f"lag{lag}_rb_denom"] = int(prior["games"]) / int(prior["rb"])
+                if isinstance(prior.get("bb"), int) and isinstance(prior.get("rb"), int):
+                    bonus_count = int(prior["bb"]) + int(prior["rb"])
+                    if bonus_count > 0:
+                        auto_numeric[f"lag{lag}_combined_denom"] = int(prior["games"]) / bonus_count
                 state_id, state_label = diff_state(prior_diff)
                 add_short_feature(row, f"lag{lag}_{state_id}", f"{lag_label}{state_label}", "lag_state")
                 if int(prior["games"]) < 100:
@@ -525,6 +548,7 @@ def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, objec
                 None,
             )
             if history:
+                auto_numeric["hit_gap"] = float(hit_distance or len(history) + 1)
                 if hit_distance is None or hit_distance >= 10:
                     add_short_feature(row, "hit_gap_10", "当たり間隔10日以上", "drought")
                 elif hit_distance >= 5:
@@ -538,12 +562,14 @@ def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, objec
                 recent = history[-window:]
                 rolling_sum = sum(int(prior["diff"]) for prior in recent)
                 rolling_sums[window] = rolling_sum
+                auto_numeric[f"roll{window}_diff"] = rolling_sum
                 sum_state = "minus" if rolling_sum < 0 else "plus"
                 sum_label = "マイナス" if rolling_sum < 0 else "プラス"
                 add_short_feature(
                     row, f"roll{window}_{sum_state}", f"直近{window}日累計{sum_label}", "rolling_state"
                 )
                 hit_count = sum(int(prior["hit"]) for prior in recent)
+                auto_numeric[f"roll{window}_hits"] = hit_count
                 if hit_count == 0:
                     hit_bucket, hit_label = "0", "0回"
                 elif hit_count == 1:
@@ -556,6 +582,7 @@ def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, objec
 
             row["_lag_diffs"] = lag_diffs
             row["_rolling_sums"] = rolling_sums
+            row["_auto_numeric"] = auto_numeric
             current.append(row)
 
         machine_groups: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
@@ -571,6 +598,8 @@ def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, objec
                     continue
                 for row in ranked:
                     value = int(row["_lag_diffs"][lag])
+                    ordered_values = sorted(values)
+                    row["_auto_numeric"][f"lag{lag}_rank_pct"] = rank_percentile(ordered_values, value)
                     if value == min(values):
                         add_short_feature(row, f"lag{lag}_worst", f"{lag_label}ワースト", "lag_rank")
                     if value == max(values):
@@ -582,6 +611,8 @@ def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, objec
                     continue
                 for row in ranked:
                     value = int(row["_rolling_sums"][window])
+                    ordered_values = sorted(values)
+                    row["_auto_numeric"][f"roll{window}_rank_pct"] = rank_percentile(ordered_values, value)
                     if value == min(values):
                         add_short_feature(row, f"roll{window}_worst", f"{window}日差枚ワースト", "rolling_rank")
                     if value == max(values):
@@ -593,20 +624,212 @@ def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, objec
     return enriched
 
 
-def build_short_feature_stats(
+def rank_percentile(ordered_values: list[int], value: int) -> float:
+    if len(ordered_values) < 2:
+        return 0.5
+    first = ordered_values.index(value)
+    last = len(ordered_values) - 1 - ordered_values[::-1].index(value)
+    return ((first + last) / 2) / (len(ordered_values) - 1)
+
+
+def automatic_features(row: dict[str, object]) -> list[tuple[str, str]]:
+    """Create data-driven two-condition rules from context and prior-only history."""
+    atoms = [
+        (f"weekday_{int(row['weekday'])}", f"{WEEKDAYS[int(row['weekday'])]}曜", "weekday"),
+        (f"date_digit_{int(row['day_digit'])}", f"{int(row['day_digit'])}の日", "date_digit"),
+        (f"unit_tail_{int(row['unit_digit'])}", f"末尾{int(row['unit_digit'])}", "unit_tail"),
+        *row.get("_short_features", []),
+    ]
+    output: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for index, (left_id, left_label, left_group) in enumerate(atoms):
+        for right_id, right_label, right_group in atoms[index + 1:]:
+            groups = frozenset((str(left_group), str(right_group)))
+            allowed = (
+                (left_group in AUTO_CONTEXT_GROUPS) != (right_group in AUTO_CONTEXT_GROUPS)
+                or groups in AUTO_HISTORY_GROUP_PAIRS
+            )
+            if not allowed:
+                continue
+            ordered = sorted(((str(left_id), str(left_label)), (str(right_id), str(right_label))))
+            feature_id = "__".join(item[0] for item in ordered)
+            if feature_id in seen:
+                continue
+            seen.add(feature_id)
+            output.append((feature_id, " × ".join(item[1] for item in ordered)))
+    return output
+
+
+def quantile(values: list[float], fraction: float) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        return 0.0
+    position = (len(ordered) - 1) * fraction
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+
+def numeric_metric_label(metric: str) -> str:
+    match = re.fullmatch(r"lag(\d+)_(diff|games|rb_denom|combined_denom|rank_pct)", metric)
+    if match:
+        lag_label = LAG_LABELS.get(int(match.group(1)), f"{match.group(1)}日前")
+        suffix = {
+            "diff": "差枚", "games": "G数", "rb_denom": "REG確率",
+            "combined_denom": "合算", "rank_pct": "機種内順位",
+        }[match.group(2)]
+        return lag_label + suffix
+    match = re.fullmatch(r"roll(\d+)_(diff|hits|rank_pct)", metric)
+    if match:
+        suffix = {"diff": "累計差枚", "hits": "当たり回数", "rank_pct": "機種内順位"}[match.group(2)]
+        return f"直近{match.group(1)}日{suffix}"
+    if metric == "hit_gap":
+        return "当たり間隔"
+    return metric
+
+
+def numeric_condition_label(metric: str, operator: str, threshold: float) -> str:
+    name = numeric_metric_label(metric)
+    if metric.endswith("rank_pct"):
+        percentage = round(threshold * 100) if operator == "le" else round((1 - threshold) * 100)
+        return f"{name}{'下位' if operator == 'le' else '上位'}{percentage}%以内"
+    if metric.endswith("_diff"):
+        value = f"{threshold:+,.0f}枚"
+    elif metric.endswith("_games"):
+        value = f"{threshold:,.0f}G"
+    elif metric.endswith("_denom"):
+        value = f"1/{threshold:.0f}"
+    elif metric.endswith("_hits"):
+        value = f"{threshold:.0f}回"
+    elif metric == "hit_gap":
+        value = f"{threshold:.0f}日"
+    else:
+        value = f"{threshold:.1f}"
+    return f"{name}{value}{'以下' if operator == 'le' else '以上'}"
+
+
+def build_auto_single_definitions(
+    enriched: list[dict[str, object]],
+) -> dict[str, list[dict[str, object]]]:
+    values_by_metric: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for row in enriched:
+        for metric, value in row.get("_auto_numeric", {}).items():
+            values_by_metric[(str(row["hall"]), str(metric))].append(float(value))
+
+    definitions: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for (hall, metric), values in values_by_metric.items():
+        seen: set[tuple[str, float]] = set()
+        for fraction in AUTO_SINGLE_QUANTILES:
+            operator = "le" if fraction < 0.5 else "ge"
+            threshold = quantile(values, fraction)
+            precision = 3 if metric.endswith("rank_pct") else 1
+            threshold = round(threshold, precision)
+            key = (operator, threshold)
+            if key in seen:
+                continue
+            seen.add(key)
+            count = sum(
+                value <= threshold if operator == "le" else value >= threshold
+                for value in values
+            )
+            if count < AUTO_MIN_COUNT:
+                continue
+            definitions[hall].append({
+                "id": f"{metric}_{operator}_{threshold:g}",
+                "metric": metric,
+                "operator": operator,
+                "threshold": threshold,
+                "label": numeric_condition_label(metric, operator, threshold),
+            })
+    return definitions
+
+
+def automatic_single_features(
+    row: dict[str, object], definitions: dict[str, list[dict[str, object]]]
+) -> list[tuple[str, str]]:
+    numeric = row.get("_auto_numeric", {})
+    output = []
+    for definition in definitions.get(str(row["hall"]), []):
+        if definition["metric"] not in numeric:
+            continue
+        value = float(numeric[definition["metric"]])
+        threshold = float(definition["threshold"])
+        active = value <= threshold if definition["operator"] == "le" else value >= threshold
+        if active:
+            output.append((str(definition["id"]), str(definition["label"])))
+    return output
+
+
+def build_learned_feature_stats(
     rows: list[dict[str, object]],
-) -> tuple[dict[str, dict[object, Stats]], dict[str, str]]:
-    feature_stats: dict[str, dict[object, Stats]] = {
+) -> tuple[
+    dict[str, dict[object, Stats]], dict[str, str],
+    dict[str, dict[object, Stats]], dict[str, str],
+    dict[str, dict[object, Stats]], dict[str, list[dict[str, object]]],
+]:
+    short_stats: dict[str, dict[object, Stats]] = {
         "hall": defaultdict(Stats),
         "machine": defaultdict(Stats),
     }
-    labels: dict[str, str] = {}
-    for row in temporal_feature_rows(rows):
+    auto_stats: dict[str, dict[object, Stats]] = {
+        "hall": defaultdict(Stats),
+        "machine": defaultdict(Stats),
+    }
+    short_labels: dict[str, str] = {}
+    auto_labels: dict[str, str] = {}
+    single_stats: dict[str, dict[object, Stats]] = {
+        "hall": defaultdict(Stats),
+        "machine": defaultdict(Stats),
+    }
+    enriched = temporal_feature_rows(rows)
+    single_definitions = build_auto_single_definitions(enriched)
+    for row in enriched:
         for feature_id, label, _ in row["_short_features"]:
-            labels[feature_id] = label
-            feature_stats["hall"][(row["hall"], feature_id)].add(row)
-            feature_stats["machine"][(row["hall"], row["machine"], feature_id)].add(row)
-    return feature_stats, labels
+            short_labels[feature_id] = label
+            short_stats["hall"][(row["hall"], feature_id)].add(row)
+            short_stats["machine"][(row["hall"], row["machine"], feature_id)].add(row)
+        for feature_id, label in automatic_features(row):
+            auto_labels[feature_id] = label
+            auto_stats["hall"][(row["hall"], feature_id)].add(row)
+            auto_stats["machine"][(row["hall"], row["machine"], feature_id)].add(row)
+        for feature_id, _ in automatic_single_features(row, single_definitions):
+            single_stats["hall"][(row["hall"], feature_id)].add(row)
+            single_stats["machine"][(row["hall"], row["machine"], feature_id)].add(row)
+    return short_stats, short_labels, auto_stats, auto_labels, single_stats, single_definitions
+
+
+def build_short_feature_stats(
+    rows: list[dict[str, object]],
+) -> tuple[dict[str, dict[object, Stats]], dict[str, str]]:
+    short_stats, short_labels, _, _, _, _ = build_learned_feature_stats(rows)
+    return short_stats, short_labels
+
+
+def discovered_contribution(
+    stats: Stats | None,
+    base: Stats,
+    label: str,
+    multipliers: dict[str, float],
+    prefix: str = "自動発見",
+) -> tuple[float, str] | None:
+    if stats is None or stats.count < AUTO_MIN_COUNT:
+        return None
+    hit_lift = stats.hit_rate - base.hit_rate
+    diff_lift = stats.avg_diff - base.avg_diff
+    if hit_lift < 0.015 and diff_lift < 100:
+        return None
+    reason_label = f"{prefix}[{label}]"
+    item = contribution(stats, base, reason_label, strength=0.75, min_count=AUTO_MIN_COUNT)
+    if item is None or item[0] < 0.75:
+        return None
+    points, _ = item
+    reason = (
+        f"{reason_label}: 当たり{stats.hit_rate * 100:.0f}% / "
+        f"平均差枚{stats.avg_diff:+.0f} ({stats.count}件)"
+    )
+    return apply_feedback(points, reason, reason_label, multipliers)
 
 
 def target_short_features(
@@ -617,7 +840,11 @@ def target_short_features(
     placeholders = []
     for candidate in candidates:
         row = dict(candidate)
-        row.update({"day": target, "date": target.isoformat(), "_target_short_feature": True})
+        row.update({
+            "day": target, "date": target.isoformat(), "weekday": target.weekday(),
+            "day_digit": target.day % 10, "unit_digit": int(row["unit"]) % 10,
+            "_target_short_feature": True,
+        })
         placeholders.append(row)
     enriched = temporal_feature_rows(training + placeholders)
     return {
@@ -754,7 +981,7 @@ def make_picks(
 ) -> list[dict[str, object]]:
     training = [r for r in rows if r["day"] < target]
     features = build_feature_stats(training)
-    short_stats, _ = build_short_feature_stats(training)
+    short_stats, _, auto_stats, _, single_stats, single_definitions = build_learned_feature_stats(training)
     feedback, _ = prediction_feedback(predictions or [])
     inventories = latest_inventory(training)
     all_candidates = [candidate for candidates in inventories.values() for candidate in candidates]
@@ -817,6 +1044,35 @@ def make_picks(
             short_points = max(-12.0, min(12.0, sum(item[1] for item in selected_short)))
             score += short_points
             reasons.extend((item[0], item[2]) for item in selected_short[:6])
+
+            discovered_pairs = []
+            if short_row:
+                for feature_id, label in automatic_features(short_row):
+                    learned = auto_stats["machine"].get((hall, machine, feature_id))
+                    if learned is None or learned.count < AUTO_MIN_COUNT:
+                        learned = auto_stats["hall"].get((hall, feature_id))
+                    item = discovered_contribution(learned, base, label, feedback)
+                    if item:
+                        discovered_pairs.append((item[0], item[1]))
+            discovered_pairs.sort(key=lambda item: item[0], reverse=True)
+
+            discovered_singles = []
+            if short_row:
+                for feature_id, label in automatic_single_features(short_row, single_definitions):
+                    learned = single_stats["machine"].get((hall, machine, feature_id))
+                    if learned is None or learned.count < AUTO_MIN_COUNT:
+                        learned = single_stats["hall"].get((hall, feature_id))
+                    item = discovered_contribution(learned, base, label, feedback, prefix="自動単独")
+                    if item:
+                        discovered_singles.append((item[0], item[1]))
+            discovered_singles.sort(key=lambda item: item[0], reverse=True)
+
+            discovered = discovered_singles[:2] + discovered_pairs[:2]
+            discovered_total = sum(item[0] for item in discovered)
+            discovered_scale = min(1.0, AUTO_MAX_POINTS / discovered_total) if discovered_total else 1.0
+            score += discovered_total * discovered_scale
+            reasons.extend((points * discovered_scale, reason) for points, reason in discovered)
+
             prev = previous.get((hall, unit))
             rule_score, rule_reasons = rule_points(hall, target, prev)
             if rule_reasons:
@@ -900,7 +1156,7 @@ def prediction_summary(predictions: list[dict[str, object]]) -> tuple[int, int, 
 
 def render_analysis(rows: list[dict[str, object]], added: int) -> str:
     weekdays, digits = condition_tables(rows)
-    short_stats, short_labels = build_short_feature_stats(rows)
+    short_stats, short_labels, auto_stats, auto_labels, single_stats, single_definitions = build_learned_feature_stats(rows)
     dates = [r["day"] for r in rows]
     halls = sorted(set(str(r["hall"]) for r in rows))
     learned_hall_dates = {(str(r["hall"]), str(r["date"])) for r in rows}
@@ -947,6 +1203,54 @@ def render_analysis(rows: list[dict[str, object]], added: int) -> str:
         ])
         for feature_id, stats in hall_short[:40]:
             lines.append(stats_row(short_labels.get(feature_id, feature_id), stats))
+        single_labels = {
+            str(item["id"]): str(item["label"])
+            for item in single_definitions.get(hall, [])
+        }
+        hall_single = [
+            (feature_id, stats)
+            for (feature_hall, feature_id), stats in single_stats["hall"].items()
+            if feature_hall == hall
+            and stats.count >= AUTO_MIN_COUNT
+            and (stats.hit_rate - base.hit_rate >= 0.015 or stats.avg_diff - base.avg_diff >= 100)
+        ]
+        hall_single.sort(
+            key=lambda item: (
+                -((item[1].hit_rate - base.hit_rate) * 100 + (item[1].avg_diff - base.avg_diff) / 200),
+                -item[1].count,
+                single_labels.get(item[0], item[0]),
+            )
+        )
+        lines.extend([
+            "", "### 自動発見した単独傾向", "",
+            f"直近差枚・G数・ボーナス確率・当たり間隔・機種内順位の境界をデータ分布から毎日作成。{AUTO_MIN_COUNT}件以上で店舗平均を上回る条件だけを候補にします。",
+            "| 単独条件 | 台データ | 当たり率 | 平均差枚 | 合算 | REG | 信頼度 |",
+            "|---|---:|---:|---:|---:|---:|---|",
+        ])
+        for feature_id, stats in hall_single[:30]:
+            lines.append(stats_row(single_labels.get(feature_id, feature_id), stats))
+        hall_auto = [
+            (feature_id, stats)
+            for (feature_hall, feature_id), stats in auto_stats["hall"].items()
+            if feature_hall == hall
+            and stats.count >= AUTO_MIN_COUNT
+            and (stats.hit_rate - base.hit_rate >= 0.015 or stats.avg_diff - base.avg_diff >= 100)
+        ]
+        hall_auto.sort(
+            key=lambda item: (
+                -((item[1].hit_rate - base.hit_rate) * 100 + (item[1].avg_diff - base.avg_diff) / 200),
+                -item[1].count,
+                auto_labels.get(item[0], item[0]),
+            )
+        )
+        lines.extend([
+            "", "### 自動発見した複合傾向", "",
+            f"曜日・日付・末尾と短期履歴、または異なる短期履歴同士を自動照合。{AUTO_MIN_COUNT}件以上で店舗平均を上回る条件だけを候補にします。",
+            "| 複合条件 | 台データ | 当たり率 | 平均差枚 | 合算 | REG | 信頼度 |",
+            "|---|---:|---:|---:|---:|---:|---|",
+        ])
+        for feature_id, stats in hall_auto[:30]:
+            lines.append(stats_row(auto_labels.get(feature_id, feature_id), stats))
     return "\n".join(lines)
 
 
@@ -959,6 +1263,7 @@ def render_picks(picks: list[dict[str, object]], predictions: list[dict[str, obj
         f"# {target.isoformat()} ジャグラー狙い台", "",
         f"生成日時: {datetime.now(JST).strftime('%Y-%m-%d %H:%M:%S JST')}", "",
         "前日までに取得できた実績だけで採点。機種ごとに1～2台を選出しています。",
+        f"単独条件と複合条件を毎日自動探索し、過去{AUTO_MIN_COUNT}件以上で有効なものだけ根拠に追加します。",
         "点数は順位付け用で、設定投入を保証する確率ではありません。", "",
         "## 答え合わせ成績", "",
         f"- 評価済み予想: {evaluated}",
