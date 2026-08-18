@@ -1,2 +1,3 @@
-state=complete
-updated_at=2026-08-18T22:55:50Z
+state=running
+batch=0
+updated_at=2026-08-18T23:12:51Z
