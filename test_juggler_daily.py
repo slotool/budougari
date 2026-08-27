@@ -128,6 +128,53 @@ class TemporalFeatureTests(unittest.TestCase):
         self.assertTrue(any("前日差枚" in label and "以下" in label for label in labels))
         self.assertTrue(any("前日差枚" in label and "以上" in label for label in labels))
 
+    def test_prior_store_machine_and_neighbor_context_is_attached(self) -> None:
+        first = date(2026, 2, 1)
+        rows = [
+            sample_row(first, 10, -1000),
+            sample_row(first, 11, -500),
+            sample_row(first, 12, -1200),
+            sample_row(first + timedelta(days=1), 11, 0),
+        ]
+
+        target = daily.temporal_feature_rows(rows)[-1]
+        feature_ids = {item[0] for item in target["_short_features"]}
+
+        self.assertIn("hall_lag1_weak", feature_ids)
+        self.assertIn("machine_lag1_weak", feature_ids)
+        self.assertIn("neighbors_both_down", feature_ids)
+        self.assertEqual(target["_auto_numeric"]["neighbor_lag1_avg_diff"], -1100)
+
+    def test_recent_reversal_rejects_old_automatic_pattern(self) -> None:
+        base = daily.Stats(count=100, hits=20, diff_sum=0)
+        strong_long = daily.Stats(count=100, hits=40, diff_sum=50000)
+        recent_base = daily.Stats(count=40, hits=12, diff_sum=4000)
+        weak_recent = daily.Stats(count=20, hits=2, diff_sum=-10000)
+
+        item = daily.discovered_contribution(
+            strong_long, base, "前回店舗全体弱め", {},
+            recent_stats=weak_recent, recent_base=recent_base,
+        )
+
+        self.assertIsNone(item)
+
+    def test_feedback_is_blended_separately_for_each_hall(self) -> None:
+        predictions = []
+        for _ in range(10):
+            predictions.append({
+                "hall": "A店", "result_hit": 1, "result_diff": 1000,
+                "reasons": "前日凹み: 当たり30% (100件)",
+            })
+            predictions.append({
+                "hall": "B店", "result_hit": 0, "result_diff": -1000,
+                "reasons": "前日凹み: 当たり30% (100件)",
+            })
+
+        a_feedback = daily.feedback_for_hall(predictions, "A店")
+        b_feedback = daily.feedback_for_hall(predictions, "B店")
+
+        self.assertGreater(a_feedback["前日凹み"], b_feedback["前日凹み"])
+
 
 if __name__ == "__main__":
     unittest.main()
