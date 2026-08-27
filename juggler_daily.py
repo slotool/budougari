@@ -43,6 +43,8 @@ LAG_LABELS = {1: "前日", 2: "前々日", 3: "3日前"}
 AUTO_MIN_COUNT = 30
 AUTO_MAX_POINTS = 8.0
 AUTO_SINGLE_QUANTILES = (0.15, 0.30, 0.70, 0.85)
+AUTO_RECENT_DAYS = 120
+AUTO_RECENT_MIN_COUNT = 12
 AUTO_CONTEXT_GROUPS = frozenset({"weekday", "date_digit", "unit_tail"})
 AUTO_HISTORY_GROUP_PAIRS = frozenset({
     frozenset(("lag_state", "rolling_state")),
@@ -53,6 +55,14 @@ AUTO_HISTORY_GROUP_PAIRS = frozenset({
     frozenset(("pattern", "rolling_rank")),
     frozenset(("drought", "rolling_state")),
     frozenset(("drought", "rolling_rank")),
+    frozenset(("lag_state", "hall_context")),
+    frozenset(("lag_state", "machine_context")),
+    frozenset(("lag_state", "neighbor")),
+    frozenset(("rolling_rank", "hall_context")),
+    frozenset(("rolling_rank", "machine_context")),
+    frozenset(("rolling_rank", "neighbor")),
+    frozenset(("hall_context", "machine_context")),
+    frozenset(("machine_context", "neighbor")),
 })
 
 
@@ -482,10 +492,94 @@ def add_short_feature(
     row.setdefault("_short_features", []).append((feature_id, label, group))
 
 
+def average_state(value: float) -> tuple[str, str]:
+    if value <= -100:
+        return "weak", "弱め"
+    if value >= 100:
+        return "strong", "強め"
+    return "neutral", "中間"
+
+
+def snapshot_rows(
+    snapshots: list[list[dict[str, object]]], machine: str | None = None, limit: int = 1
+) -> list[dict[str, object]]:
+    selected = snapshots[-limit:]
+    rows = [row for snapshot in selected for row in snapshot]
+    if machine is not None:
+        rows = [row for row in rows if str(row["machine"]) == machine]
+    return rows
+
+
+def add_context_features(
+    row: dict[str, object], snapshots: list[list[dict[str, object]]]
+) -> None:
+    if not snapshots:
+        return
+    hall = str(row["hall"])
+    machine = str(row["machine"])
+    unit = int(row["unit"])
+    numeric = row["_auto_numeric"]
+    prior_hall = snapshot_rows(snapshots)
+    prior_machine = snapshot_rows(snapshots, machine)
+
+    hall_avg = sum(int(prior["diff"]) for prior in prior_hall) / len(prior_hall)
+    hall_state, hall_label = average_state(hall_avg)
+    add_short_feature(row, f"hall_lag1_{hall_state}", f"前回店舗全体{hall_label}", "hall_context")
+    numeric["hall_lag1_avg_diff"] = hall_avg
+
+    if prior_machine:
+        machine_avg = sum(int(prior["diff"]) for prior in prior_machine) / len(prior_machine)
+        machine_state, machine_label = average_state(machine_avg)
+        add_short_feature(
+            row, f"machine_lag1_{machine_state}", f"前回機種全体{machine_label}", "machine_context"
+        )
+        numeric["machine_lag1_avg_diff"] = machine_avg
+
+    prior_by_unit = {
+        int(prior["unit"]): prior
+        for prior in prior_machine
+    }
+    neighbors = [prior_by_unit[number] for number in (unit - 1, unit + 1) if number in prior_by_unit]
+    if neighbors:
+        neighbor_avg = sum(int(prior["diff"]) for prior in neighbors) / len(neighbors)
+        numeric["neighbor_lag1_avg_diff"] = neighbor_avg
+        states = [diff_state(int(prior["diff"]))[0] for prior in neighbors]
+        if len(states) == 2 and all(state == "down" for state in states):
+            add_short_feature(row, "neighbors_both_down", "前回両隣凹み", "neighbor")
+        elif len(states) == 2 and all(state == "up" for state in states):
+            add_short_feature(row, "neighbors_both_up", "前回両隣好調", "neighbor")
+        elif any(state == "down" for state in states):
+            add_short_feature(row, "neighbor_down", "前回隣接台に凹み", "neighbor")
+        elif any(state == "up" for state in states):
+            add_short_feature(row, "neighbor_up", "前回隣接台に好調", "neighbor")
+        else:
+            add_short_feature(row, "neighbor_neutral", "前回隣接台中間", "neighbor")
+
+    if len(snapshots) >= 3:
+        hall_recent = snapshot_rows(snapshots, limit=3)
+        hall_roll_avg = sum(int(prior["diff"]) for prior in hall_recent) / len(hall_recent)
+        hall_roll_state, hall_roll_label = average_state(hall_roll_avg)
+        add_short_feature(
+            row, f"hall_roll3_{hall_roll_state}", f"店舗直近3回{hall_roll_label}", "hall_context"
+        )
+        numeric["hall_roll3_avg_diff"] = hall_roll_avg
+
+        machine_recent = snapshot_rows(snapshots, machine, limit=3)
+        if machine_recent:
+            machine_roll_avg = sum(int(prior["diff"]) for prior in machine_recent) / len(machine_recent)
+            machine_roll_state, machine_roll_label = average_state(machine_roll_avg)
+            add_short_feature(
+                row, f"machine_roll3_{machine_roll_state}",
+                f"機種直近3回{machine_roll_label}", "machine_context"
+            )
+            numeric["machine_roll3_avg_diff"] = machine_roll_avg
+
+
 def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     """Attach prior-only features to each row without looking at its outcome."""
     histories: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
     rows_by_day: dict[date, list[dict[str, object]]] = defaultdict(list)
+    hall_snapshots: dict[str, list[list[dict[str, object]]]] = defaultdict(list)
     for row in rows:
         rows_by_day[row["day"]].append(row)
 
@@ -583,6 +677,7 @@ def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, objec
             row["_lag_diffs"] = lag_diffs
             row["_rolling_sums"] = rolling_sums
             row["_auto_numeric"] = auto_numeric
+            add_context_features(row, hall_snapshots[str(row["hall"])])
             current.append(row)
 
         machine_groups: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
@@ -621,6 +716,11 @@ def temporal_feature_rows(rows: list[dict[str, object]]) -> list[dict[str, objec
         enriched.extend(current)
         for original in rows_by_day[day]:
             histories[(str(original["hall"]), str(original["unit"]))].append(original)
+        current_by_hall: dict[str, list[dict[str, object]]] = defaultdict(list)
+        for original in rows_by_day[day]:
+            current_by_hall[str(original["hall"])].append(original)
+        for hall, day_rows in current_by_hall.items():
+            hall_snapshots[hall].append(day_rows)
     return enriched
 
 
@@ -687,6 +787,15 @@ def numeric_metric_label(metric: str) -> str:
         return f"直近{match.group(1)}日{suffix}"
     if metric == "hit_gap":
         return "当たり間隔"
+    context_labels = {
+        "hall_lag1_avg_diff": "前回店舗平均差枚",
+        "machine_lag1_avg_diff": "前回機種平均差枚",
+        "neighbor_lag1_avg_diff": "前回隣接台平均差枚",
+        "hall_roll3_avg_diff": "店舗直近3回平均差枚",
+        "machine_roll3_avg_diff": "機種直近3回平均差枚",
+    }
+    if metric in context_labels:
+        return context_labels[metric]
     return metric
 
 
@@ -768,6 +877,7 @@ def build_learned_feature_stats(
     dict[str, dict[object, Stats]], dict[str, str],
     dict[str, dict[object, Stats]], dict[str, str],
     dict[str, dict[object, Stats]], dict[str, list[dict[str, object]]],
+    dict[str, dict[object, Stats]], dict[str, dict[object, Stats]],
 ]:
     short_stats: dict[str, dict[object, Stats]] = {
         "hall": defaultdict(Stats),
@@ -784,6 +894,15 @@ def build_learned_feature_stats(
         "machine": defaultdict(Stats),
     }
     enriched = temporal_feature_rows(rows)
+    recent_cutoff = max((row["day"] for row in enriched), default=date.min) - timedelta(days=AUTO_RECENT_DAYS)
+    auto_recent_stats: dict[str, dict[object, Stats]] = {
+        "hall": defaultdict(Stats),
+        "machine": defaultdict(Stats),
+    }
+    single_recent_stats: dict[str, dict[object, Stats]] = {
+        "hall": defaultdict(Stats),
+        "machine": defaultdict(Stats),
+    }
     single_definitions = build_auto_single_definitions(enriched)
     for row in enriched:
         for feature_id, label, _ in row["_short_features"]:
@@ -794,16 +913,25 @@ def build_learned_feature_stats(
             auto_labels[feature_id] = label
             auto_stats["hall"][(row["hall"], feature_id)].add(row)
             auto_stats["machine"][(row["hall"], row["machine"], feature_id)].add(row)
+            if row["day"] >= recent_cutoff:
+                auto_recent_stats["hall"][(row["hall"], feature_id)].add(row)
+                auto_recent_stats["machine"][(row["hall"], row["machine"], feature_id)].add(row)
         for feature_id, _ in automatic_single_features(row, single_definitions):
             single_stats["hall"][(row["hall"], feature_id)].add(row)
             single_stats["machine"][(row["hall"], row["machine"], feature_id)].add(row)
-    return short_stats, short_labels, auto_stats, auto_labels, single_stats, single_definitions
+            if row["day"] >= recent_cutoff:
+                single_recent_stats["hall"][(row["hall"], feature_id)].add(row)
+                single_recent_stats["machine"][(row["hall"], row["machine"], feature_id)].add(row)
+    return (
+        short_stats, short_labels, auto_stats, auto_labels, single_stats, single_definitions,
+        auto_recent_stats, single_recent_stats,
+    )
 
 
 def build_short_feature_stats(
     rows: list[dict[str, object]],
 ) -> tuple[dict[str, dict[object, Stats]], dict[str, str]]:
-    short_stats, short_labels, _, _, _, _ = build_learned_feature_stats(rows)
+    short_stats, short_labels, _, _, _, _, _, _ = build_learned_feature_stats(rows)
     return short_stats, short_labels
 
 
@@ -813,6 +941,8 @@ def discovered_contribution(
     label: str,
     multipliers: dict[str, float],
     prefix: str = "自動発見",
+    recent_stats: Stats | None = None,
+    recent_base: Stats | None = None,
 ) -> tuple[float, str] | None:
     if stats is None or stats.count < AUTO_MIN_COUNT:
         return None
@@ -825,9 +955,21 @@ def discovered_contribution(
     if item is None or item[0] < 0.75:
         return None
     points, _ = item
+    recent_text = ""
+    if recent_stats is not None and recent_base is not None and recent_stats.count >= AUTO_RECENT_MIN_COUNT:
+        recent_hit_lift = recent_stats.hit_rate - recent_base.hit_rate
+        recent_diff_lift = recent_stats.avg_diff - recent_base.avg_diff
+        if recent_hit_lift < 0 and recent_diff_lift < 0:
+            return None
+        recent_item = contribution(
+            recent_stats, recent_base, reason_label, strength=0.75, min_count=AUTO_RECENT_MIN_COUNT
+        )
+        if recent_item is not None:
+            points = points * 0.65 + recent_item[0] * 0.35
+        recent_text = f" / 直近{recent_stats.hit_rate * 100:.0f}% ({recent_stats.count}件)"
     reason = (
         f"{reason_label}: 当たり{stats.hit_rate * 100:.0f}% / "
-        f"平均差枚{stats.avg_diff:+.0f} ({stats.count}件)"
+        f"平均差枚{stats.avg_diff:+.0f} ({stats.count}件){recent_text}"
     )
     return apply_feedback(points, reason, reason_label, multipliers)
 
@@ -913,6 +1055,21 @@ def prediction_feedback(
     return multipliers, details
 
 
+def feedback_for_hall(
+    predictions: list[dict[str, object]], hall: str
+) -> dict[str, float]:
+    global_feedback, _ = prediction_feedback(predictions)
+    hall_rows = [row for row in predictions if str(row.get("hall", "")) == hall]
+    hall_feedback, _ = prediction_feedback(hall_rows)
+    blended = dict(global_feedback)
+    for key, multiplier in hall_feedback.items():
+        if key in global_feedback:
+            blended[key] = round(global_feedback[key] * 0.35 + multiplier * 0.65, 3)
+        else:
+            blended[key] = multiplier
+    return blended
+
+
 def apply_feedback(points: float, reason: str, label: str, multipliers: dict[str, float]) -> tuple[float, str]:
     multiplier = multipliers.get(feedback_key(label), 1.0)
     adjusted = points * multiplier
@@ -981,8 +1138,12 @@ def make_picks(
 ) -> list[dict[str, object]]:
     training = [r for r in rows if r["day"] < target]
     features = build_feature_stats(training)
-    short_stats, _, auto_stats, _, single_stats, single_definitions = build_learned_feature_stats(training)
-    feedback, _ = prediction_feedback(predictions or [])
+    (
+        short_stats, _, auto_stats, _, single_stats, single_definitions,
+        auto_recent_stats, single_recent_stats,
+    ) = build_learned_feature_stats(training)
+    recent_training = [row for row in training if row["day"] >= target - timedelta(days=AUTO_RECENT_DAYS)]
+    recent_features = build_feature_stats(recent_training)
     inventories = latest_inventory(training)
     all_candidates = [candidate for candidates in inventories.values() for candidate in candidates]
     current_short = target_short_features(training, all_candidates, target)
@@ -992,6 +1153,8 @@ def make_picks(
         base = features["hall"].get(hall)
         if not base:
             continue
+        recent_base = recent_features["hall"].get(hall, base)
+        feedback = feedback_for_hall(predictions or [], hall)
         tails = terminal_targets(features, hall, target)
         by_machine: dict[str, list[dict[str, object]]] = defaultdict(list)
         for candidate in candidates:
@@ -1051,7 +1214,13 @@ def make_picks(
                     learned = auto_stats["machine"].get((hall, machine, feature_id))
                     if learned is None or learned.count < AUTO_MIN_COUNT:
                         learned = auto_stats["hall"].get((hall, feature_id))
-                    item = discovered_contribution(learned, base, label, feedback)
+                    recent_learned = auto_recent_stats["machine"].get((hall, machine, feature_id))
+                    if recent_learned is None or recent_learned.count < AUTO_RECENT_MIN_COUNT:
+                        recent_learned = auto_recent_stats["hall"].get((hall, feature_id))
+                    item = discovered_contribution(
+                        learned, base, label, feedback,
+                        recent_stats=recent_learned, recent_base=recent_base,
+                    )
                     if item:
                         discovered_pairs.append((item[0], item[1]))
             discovered_pairs.sort(key=lambda item: item[0], reverse=True)
@@ -1062,7 +1231,13 @@ def make_picks(
                     learned = single_stats["machine"].get((hall, machine, feature_id))
                     if learned is None or learned.count < AUTO_MIN_COUNT:
                         learned = single_stats["hall"].get((hall, feature_id))
-                    item = discovered_contribution(learned, base, label, feedback, prefix="自動単独")
+                    recent_learned = single_recent_stats["machine"].get((hall, machine, feature_id))
+                    if recent_learned is None or recent_learned.count < AUTO_RECENT_MIN_COUNT:
+                        recent_learned = single_recent_stats["hall"].get((hall, feature_id))
+                    item = discovered_contribution(
+                        learned, base, label, feedback, prefix="自動単独",
+                        recent_stats=recent_learned, recent_base=recent_base,
+                    )
                     if item:
                         discovered_singles.append((item[0], item[1]))
             discovered_singles.sort(key=lambda item: item[0], reverse=True)
@@ -1156,7 +1331,10 @@ def prediction_summary(predictions: list[dict[str, object]]) -> tuple[int, int, 
 
 def render_analysis(rows: list[dict[str, object]], added: int) -> str:
     weekdays, digits = condition_tables(rows)
-    short_stats, short_labels, auto_stats, auto_labels, single_stats, single_definitions = build_learned_feature_stats(rows)
+    (
+        short_stats, short_labels, auto_stats, auto_labels, single_stats, single_definitions,
+        _, _,
+    ) = build_learned_feature_stats(rows)
     dates = [r["day"] for r in rows]
     halls = sorted(set(str(r["hall"]) for r in rows))
     learned_hall_dates = {(str(r["hall"]), str(r["date"])) for r in rows}
@@ -1223,7 +1401,7 @@ def render_analysis(rows: list[dict[str, object]], added: int) -> str:
         )
         lines.extend([
             "", "### 自動発見した単独傾向", "",
-            f"直近差枚・G数・ボーナス確率・当たり間隔・機種内順位の境界をデータ分布から毎日作成。{AUTO_MIN_COUNT}件以上で店舗平均を上回る条件だけを候補にします。",
+            f"直近差枚・G数・ボーナス確率・当たり間隔・機種内順位・店舗/機種/隣接台の流れを毎日分析。{AUTO_MIN_COUNT}件以上で店舗平均を上回り、直近{AUTO_RECENT_DAYS}日でも逆行しない条件だけを候補にします。",
             "| 単独条件 | 台データ | 当たり率 | 平均差枚 | 合算 | REG | 信頼度 |",
             "|---|---:|---:|---:|---:|---:|---|",
         ])
@@ -1245,7 +1423,7 @@ def render_analysis(rows: list[dict[str, object]], added: int) -> str:
         )
         lines.extend([
             "", "### 自動発見した複合傾向", "",
-            f"曜日・日付・末尾と短期履歴、または異なる短期履歴同士を自動照合。{AUTO_MIN_COUNT}件以上で店舗平均を上回る条件だけを候補にします。",
+            f"曜日・日付・末尾、店舗全体、機種全体、隣接台、短期履歴を自動照合。{AUTO_MIN_COUNT}件以上で店舗平均を上回り、直近{AUTO_RECENT_DAYS}日でも逆行しない条件だけを候補にします。",
             "| 複合条件 | 台データ | 当たり率 | 平均差枚 | 合算 | REG | 信頼度 |",
             "|---|---:|---:|---:|---:|---:|---|",
         ])
