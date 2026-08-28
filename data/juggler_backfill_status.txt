@@ -1,5 +1,4 @@
 state=running
-batch=1
-rows_before=62341
-rows_after=62513
-updated_at=2026-08-28T06:17:42Z
+batch=2
+rows_before=62513
+updated_at=2026-08-28T06:17:44Z
