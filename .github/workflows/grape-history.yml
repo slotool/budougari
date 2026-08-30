@@ -15,6 +15,12 @@ on:
         description: "Maximum new hall-date reports to collect in one run"
         required: true
         default: "20"
+  push:
+    branches:
+      - main
+    paths:
+      - "grape_history_report.py"
+      - ".github/workflows/grape-history.yml"
   schedule:
     - cron: "27 0 * * *"
 
@@ -60,6 +66,9 @@ jobs:
 
       - uses: actions/upload-pages-artifact@v3
         with:
+          name: github-pages-${{ github.run_attempt }}
           path: site
 
       - uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
