@@ -22,10 +22,11 @@ on:
       - "juggler_daily.py"
       - ".github/workflows/juggler-daily.yml"
   schedule:
-    # 07:30, 08:00, 08:30, 09:00 JST. Repeated runs cover publication and GitHub scheduling delays.
+    # 07:30, 08:00, 08:30, 09:00, 09:30, 09:45 JST.
+    # Repeated runs cover publication and GitHub scheduling delays.
     - cron: "30 22 * * *"
     - cron: "0,30 23 * * *"
-    - cron: "0 0 * * *"
+    - cron: "0,30,45 0 * * *"
 
 permissions:
   contents: write
