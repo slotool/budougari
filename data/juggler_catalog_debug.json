@@ -1,21 +1,41 @@
 {
-  "generated_at": "2026-08-29T14:12:16.438000+09:00",
+  "generated_at": "2026-08-30T09:26:00.961172+09:00",
   "halls": [
     {
       "hall": "パーラーゾーン姪浜",
-      "source": "cache",
-      "listed_reports": 347,
-      "oldest": "2025-08-29",
-      "newest": "2026-08-27",
-      "missing_reports": 0
+      "tag_id": 4897,
+      "body_classes": [
+        "archive",
+        "tag",
+        "tag-4897",
+        "wp-theme-minrepo"
+      ],
+      "api_page_sizes": [
+        400,
+        400
+      ],
+      "listed_reports": 348,
+      "oldest": "2025-08-30",
+      "newest": "2026-08-29",
+      "missing_reports": 1
     },
     {
       "hall": "アウトバーンブリッツ",
-      "source": "cache",
-      "listed_reports": 351,
-      "oldest": "2025-08-29",
-      "newest": "2026-08-27",
-      "missing_reports": 0
+      "tag_id": 4382,
+      "body_classes": [
+        "archive",
+        "tag",
+        "tag-4382",
+        "wp-theme-minrepo"
+      ],
+      "api_page_sizes": [
+        400,
+        400
+      ],
+      "listed_reports": 352,
+      "oldest": "2025-08-30",
+      "newest": "2026-08-29",
+      "missing_reports": 1
     }
   ]
 }
