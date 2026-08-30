@@ -1,5 +1,2 @@
-state=running
-batch=2
-rows_before=62857
-rows_after=62857
-updated_at=2026-08-30T00:30:20Z
+state=complete
+updated_at=2026-08-30T00:30:22Z
