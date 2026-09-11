@@ -311,6 +311,20 @@ def collect_hall_resilient(
     for latest in report_candidates_resilient(tag_html, hall["tag_url"], today)[:10]:
         result = collect_hall_candidate(client, hall, latest)
         if result["rows"]:
+            missing_diff = [
+                row for row in result["rows"]
+                if isinstance(row.get("games"), int)
+                and row["games"] > 0
+                and not isinstance(row.get("diff"), int)
+            ]
+            if missing_diff:
+                sample = ", ".join(
+                    f"{row['machine']}#{row['unit']}" for row in missing_diff[:8]
+                )
+                raise RuntimeError(
+                    "最新掲載日の差枚が未反映のため、既存レポートを更新しません: "
+                    f"{hall['name']} {latest['date']} count={len(missing_diff)} sample={sample}"
+                )
             return result
         tried.append(f"{latest['date']} {latest['url']}")
 
