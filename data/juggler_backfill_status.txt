@@ -1,24 +1,3 @@
-state=failed
-exit_code=1
-command=tee "${log_file}"
-updated_at=2026-09-11T13:09:16Z
-
-last_log:
-Traceback (most recent call last):
-  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 1580, in <module>
-    main()
-  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 1569, in main
-    added = collect_missing(rows_by_key, config, delay, args.backfill_days, args.max_new_reports)
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 395, in collect_missing
-    result = collect_summary_report(client, hall, latest)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 211, in collect_summary_report
-    source = client.fetch(all_url)
-             ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/budougari/budougari/latest_grape_report_impl.py", line 120, in fetch
-    return self._browser_fetch(url)
-           ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/budougari/budougari/latest_grape_report_impl.py", line 167, in _browser_fetch
-    raise RuntimeError(f"Browser fetch returned no report: {url} / exit={last_returncode} / {detail}")
-RuntimeError: Browser fetch returned no report: https://min-repo.com/3320805/?kishu=all&sort=num / exit=0 / :0911/130916.146633:ERROR:components/page_load_metrics/browser/page_load_metrics_update_dispatcher.cc:88] Invalid response_start 0.272 s for parse_start 0.01 s [8888:8888:0911/130916.147385:ERROR:components/page_load_metrics/browser/page_load_metrics_update_dispatcher.cc:88] Invalid response_start 0.272 s for parse_start 0.01 s [8888:8888:0911/130916.147403:ERROR:components/page_load_metrics/browser/page_load_metrics_update_dispatcher.cc:88] Invalid response_start 0.272 s for parse_start 0.01 s
+state=running
+batch=0
+updated_at=2026-09-11T13:12:43Z
