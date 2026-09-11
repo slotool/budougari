@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-11T12:55:40.883329+09:00",
+  "generated_at": "2026-09-11T19:52:02.135112+09:00",
   "halls": [
     {
       "hall": "パーラーゾーン姪浜",
@@ -16,6 +16,24 @@
       "oldest": "2025-09-11",
       "newest": "2026-09-09",
       "missing_reports": 1
+    },
+    {
+      "hall": "ワンダーランド西新",
+      "tag_id": 914,
+      "body_classes": [
+        "archive",
+        "tag",
+        "tag-914",
+        "wp-theme-minrepo"
+      ],
+      "api_page_sizes": [
+        400,
+        387
+      ],
+      "listed_reports": 300,
+      "oldest": "2025-11-01",
+      "newest": "2026-09-10",
+      "missing_reports": 300
     }
   ]
 }
