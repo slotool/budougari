@@ -440,13 +440,23 @@ def parse_machine_units(source: str, machine: str) -> list[dict[str, Any]]:
             graph_row = graph_rows.get(unit, {})
             diff = parse_int(row[h["差枚"]])
             games = parse_int(row[h["G数"]])
+            selected_diff = diff if diff is not None else graph_row.get("diff")
+            selected_games = games if games is not None else graph_row.get("games")
+            payout_rate = parse_percent(row[h["出率"]]) if "出率" in h else None
+            if (
+                payout_rate is None
+                and isinstance(selected_diff, int)
+                and isinstance(selected_games, int)
+                and selected_games > 0
+            ):
+                payout_rate = 100 + selected_diff / (selected_games * 3) * 100
             rows.append(
                 {
                     "machine": machine,
                     "unit": unit,
-                    "diff": diff if diff is not None else graph_row.get("diff"),
-                    "games": games if games is not None else graph_row.get("games"),
-                    "payout_rate": parse_percent(row[h["出率"]]) if "出率" in h else None,
+                    "diff": selected_diff,
+                    "games": selected_games,
+                    "payout_rate": payout_rate,
                     "bb": parse_int(row[h["BB"]]),
                     "rb": parse_int(row[h["RB"]]),
                     "combined_rate": parse_rate(row[h["合成"]]) if "合成" in h else None,

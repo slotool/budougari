@@ -31,8 +31,8 @@ class MachinePageParserTests(unittest.TestCase):
         self.assertEqual(rows[0]["unit"], 1801)
         self.assertEqual(rows[0]["diff"], -891)
         self.assertEqual(rows[0]["games"], 3461)
+        self.assertAlmostEqual(rows[0]["payout_rate"], 91.42, places=2)
         self.assertEqual(rows[1]["diff"], 500)
-
 
 if __name__ == "__main__":
     unittest.main()
