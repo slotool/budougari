@@ -448,6 +448,28 @@ def render_table(lines: list[str]) -> str:
     return f'<div class="table-wrap"><table><thead><tr>{ths}</tr></thead><tbody>{"".join(trs)}</tbody></table></div>'
 
 
+
+def collect_latest_valid_hall(
+    client: report.MinRepoClient,
+    hall: dict[str, str],
+    today: date,
+) -> dict[str, object]:
+    candidates = list_reports_from_tag(client, hall, today, 14)
+    if not candidates:
+        source = client.fetch(hall["tag_url"])
+        candidates = [find_latest_report_resilient(source, hall["tag_url"], today)]
+
+    tried: list[str] = []
+    for latest in reversed(candidates):
+        result = collect_hall_report(client, hall, latest)
+        if result["rows"]:
+            return result
+        tried.append(f"{latest['date']} {latest['url']}")
+
+    raise RuntimeError(
+        f"ジャグラー台データがある掲載日を見つけられませんでした: {hall['name']} / tried={tried}"
+    )
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.json")
@@ -478,7 +500,7 @@ def main() -> None:
             if len(results) >= args.max_new_reports:
                 break
     else:
-        results = [report.collect_hall(client, hall, today) for hall in config["halls"]]
+        results = [collect_latest_valid_hall(client, hall, today) for hall in config["halls"]]
 
     history = append_history(results)
     analysis = analyze(history, args.min_games, args.low_output_diff_max)

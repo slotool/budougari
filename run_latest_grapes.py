@@ -239,9 +239,37 @@ def extract_juggler_machines(source: str, latest_id: str) -> list[str]:
     return sorted(machines)
 
 
-def collect_hall_resilient(client: report.MinRepoClient, hall: dict[str, str], today: date) -> dict[str, object]:
-    tag_html = client.fetch(hall["tag_url"])
-    latest = find_latest_report_resilient(tag_html, hall["tag_url"], today)
+def report_candidates_resilient(
+    source: str,
+    tag_url: str,
+    today: date,
+) -> list[dict[str, object]]:
+    found_by_id: dict[str, dict[str, object]] = {}
+    for table in report.parse_tables(source):
+        if not table:
+            continue
+        header = [report.split_link(cell)[0] for cell in table[0]]
+        if not header or header[0] != "日付":
+            continue
+        for row in table[1:]:
+            if not row:
+                continue
+            label, href = report.split_link(row[0])
+            found = _candidate(label, href, tag_url, today)
+            if found:
+                found_by_id[str(found["id"])] = found
+
+    if not found_by_id:
+        latest = find_latest_report_resilient(source, tag_url, today)
+        found_by_id[str(latest["id"])] = latest
+    return sorted(found_by_id.values(), key=lambda item: item["date"], reverse=True)
+
+
+def collect_hall_candidate(
+    client: report.MinRepoClient,
+    hall: dict[str, str],
+    latest: dict[str, object],
+) -> dict[str, object]:
     report_url = str(latest["url"]).rstrip("/") + "/"
     latest_id = str(latest["id"])
 
@@ -269,10 +297,26 @@ def collect_hall_resilient(client: report.MinRepoClient, hall: dict[str, str], t
     for row in by_key.values():
         row.update(estimate_grape_by_play_levels(row))
         rows.append(row)
-    rows.sort(key=lambda r: (r["machine"], r["unit"]))
-    if not rows:
-        raise RuntimeError(f"ジャグラー台データが0件です: {hall['name']} {latest['date']} {report_url}")
+    rows.sort(key=lambda row: (row["machine"], row["unit"]))
     return {"hall": hall["name"], "latest": latest, "rows": rows}
+
+
+def collect_hall_resilient(
+    client: report.MinRepoClient,
+    hall: dict[str, str],
+    today: date,
+) -> dict[str, object]:
+    tag_html = client.fetch(hall["tag_url"])
+    tried: list[str] = []
+    for latest in report_candidates_resilient(tag_html, hall["tag_url"], today)[:10]:
+        result = collect_hall_candidate(client, hall, latest)
+        if result["rows"]:
+            return result
+        tried.append(f"{latest['date']} {latest['url']}")
+
+    raise RuntimeError(
+        f"ジャグラー台データがある掲載日を見つけられませんでした: {hall['name']} / tried={tried}"
+    )
 
 
 _original_find_latest_report = report.find_latest_report

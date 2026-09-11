@@ -384,8 +384,16 @@ def collect_missing(
 
     candidates.sort(key=lambda pair: pair[1]["date"], reverse=True)
     added = 0
-    for hall, latest in candidates[:max_new_reports]:
-        result = collect_summary_report(client, hall, latest)
+    for hall, latest in candidates:
+        if added >= max_new_reports:
+            break
+        try:
+            result = collect_summary_report(client, hall, latest)
+        except RuntimeError as exc:
+            if "ジャグラー行が0件です" not in str(exc):
+                raise
+            print(f"skip empty Juggler report: {hall['name']} {latest['date']} {latest['url']}")
+            continue
         add_collected_result(rows, result)
         added += 1
     return added
