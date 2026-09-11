@@ -14,7 +14,7 @@ on:
       max_new_reports:
         description: "Maximum hall-date reports per checkpoint batch"
         required: true
-        default: "30"
+        default: "50"
   push:
     branches:
       - main
@@ -36,7 +36,7 @@ permissions:
 
 concurrency:
   group: juggler-daily
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -95,9 +95,9 @@ jobs:
           printf 'state=running\nbatch=0\nupdated_at=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > "${status_file}"
           commit_status "Start checkpointed Juggler backfill"
 
-          # One bounded checkpoint per run. Repeated daily runs continue the
-          # 365-day backfill without keeping one runner active for hours.
-          for batch in $(seq 1 1); do
+          # Catch up in bounded checkpoints. Existing hall-date reports are
+          # skipped, so each batch adds only data that is still missing.
+          for batch in $(seq 1 6); do
             if [[ -f data/juggler_history.csv ]]; then
               before=$(wc -l < data/juggler_history.csv)
             else
@@ -111,7 +111,7 @@ jobs:
             python juggler_daily.py \
               --delay "${{ github.event.inputs.delay_seconds || '5' }}" \
               --backfill-days "${{ github.event.inputs.backfill_days || '365' }}" \
-              --max-new-reports "${{ github.event.inputs.max_new_reports || '30' }}" \
+              --max-new-reports "${{ github.event.inputs.max_new_reports || '50' }}" \
               2>&1 | tee "${log_file}"
             python build_site.py
             after=$(wc -l < data/juggler_history.csv)
