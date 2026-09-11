@@ -20,7 +20,6 @@ on:
       - main
     paths:
       - "grape_history_report.py"
-      - "latest_grape_report_impl.py"
       - "config.json"
       - ".github/workflows/grape-history.yml"
   schedule:
