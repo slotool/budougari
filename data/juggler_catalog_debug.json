@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-11T19:52:02.135112+09:00",
+  "generated_at": "2026-09-11T20:00:09.367194+09:00",
   "halls": [
     {
       "hall": "パーラーゾーン姪浜",
@@ -19,17 +19,7 @@
     },
     {
       "hall": "ワンダーランド西新",
-      "tag_id": 914,
-      "body_classes": [
-        "archive",
-        "tag",
-        "tag-914",
-        "wp-theme-minrepo"
-      ],
-      "api_page_sizes": [
-        400,
-        387
-      ],
+      "source": "cache",
       "listed_reports": 300,
       "oldest": "2025-11-01",
       "newest": "2026-09-10",
