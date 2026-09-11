@@ -394,10 +394,11 @@ def collect_missing(
         try:
             result = collect_summary_report(client, hall, latest)
         except RuntimeError as exc:
-            if "ジャグラー行が0件です" not in str(exc):
-                raise
             empty_attempts_by_hall[hall_name] = empty_attempts_by_hall.get(hall_name, 0) + 1
-            print(f"skip empty Juggler report: {hall_name} {latest['date']} {latest['url']}")
+            print(
+                f"skip unavailable Juggler report: {hall_name} "
+                f"{latest['date']} {latest['url']} / {exc}"
+            )
             continue
         add_collected_result(rows, result)
         added += 1
