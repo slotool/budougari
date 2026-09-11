@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-11T20:00:09.367194+09:00",
+  "generated_at": "2026-09-11T21:53:57.011193+09:00",
   "halls": [
     {
       "hall": "パーラーゾーン姪浜",
@@ -7,7 +7,7 @@
       "listed_reports": 347,
       "oldest": "2025-09-12",
       "newest": "2026-09-10",
-      "missing_reports": 2
+      "missing_reports": 1
     },
     {
       "hall": "アウトバーンブリッツ",
@@ -15,7 +15,7 @@
       "listed_reports": 352,
       "oldest": "2025-09-11",
       "newest": "2026-09-09",
-      "missing_reports": 1
+      "missing_reports": 0
     },
     {
       "hall": "ワンダーランド西新",
@@ -23,7 +23,7 @@
       "listed_reports": 300,
       "oldest": "2025-11-01",
       "newest": "2026-09-10",
-      "missing_reports": 300
+      "missing_reports": 299
     }
   ]
 }

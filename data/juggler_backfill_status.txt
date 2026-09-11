@@ -1,4 +1,24 @@
-state=running
-batch=1
-rows_before=64500
-updated_at=2026-09-11T12:53:54Z
+state=failed
+exit_code=1
+command=tee "${log_file}"
+updated_at=2026-09-11T12:54:13Z
+
+last_log:
+Traceback (most recent call last):
+  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 1580, in <module>
+    main()
+  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 1569, in main
+    added = collect_missing(rows_by_key, config, delay, args.backfill_days, args.max_new_reports)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 395, in collect_missing
+    result = collect_summary_report(client, hall, latest)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/budougari/budougari/juggler_daily.py", line 207, in collect_summary_report
+    landing_source = client.fetch(report_url)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/budougari/budougari/latest_grape_report_impl.py", line 126, in fetch
+    return self._browser_fetch(url)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/budougari/budougari/latest_grape_report_impl.py", line 151, in _browser_fetch
+    raise RuntimeError(f"Browser authentication failed: {landing_url}")
+RuntimeError: Browser authentication failed: https://min-repo.com/3340554/
