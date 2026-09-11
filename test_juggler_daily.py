@@ -192,6 +192,13 @@ class TemporalFeatureTests(unittest.TestCase):
         self.assertEqual(points, 0.0)
         self.assertEqual(reasons, [])
 
+    def test_minrepo_browser_challenge_detection(self) -> None:
+        client = daily.report.MinRepoClient(5)
+        self.assertTrue(client._is_browser_challenge(""))
+        self.assertTrue(client._is_browser_challenge("<html><head></head><body></body></html>"))
+        self.assertTrue(client._is_browser_challenge("<script>action=w_scd_n&_ajax_nonce=abc123</script>"))
+        self.assertFalse(client._is_browser_challenge("<html><body><table><tr><td>408</td></tr></table></body></html>"))
+
 if __name__ == "__main__":
     unittest.main()
 
