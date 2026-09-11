@@ -146,9 +146,13 @@ class MinRepoClient:
 
         landing_url = url.split("?", 1)[0]
         if not self.browser_profile_ready:
-            landing_body = self._run_browser(landing_url)
+            landing_body = ""
+            for _attempt in range(3):
+                landing_body = self._run_browser(landing_url)
+                if not self._is_browser_challenge(landing_body):
+                    break
             if self._is_browser_challenge(landing_body):
-                raise RuntimeError(f"Browser authentication failed: {landing_url}")
+                raise RuntimeError(f"Browser authentication failed after 3 attempts: {landing_url}")
             self.browser_profile_ready = True
             if url == landing_url:
                 return landing_body
