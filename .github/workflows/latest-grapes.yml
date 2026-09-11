@@ -14,6 +14,7 @@ on:
       - "run_latest_grapes.py"
       - "latest_grape_report_impl.py"
       - "latest_grape_report_overrides.py"
+      - "test_latest_grape_report.py"
       - "build_site.py"
       - "config.json"
       - ".github/workflows/latest-grapes.yml"
@@ -45,6 +46,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Run parser tests
+        run: python -m unittest test_latest_grape_report.py
 
       - name: Collect latest grape estimates
         run: python run_latest_grapes.py --delay "${{ github.event.inputs.delay_seconds || '5' }}"

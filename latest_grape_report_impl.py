@@ -386,8 +386,43 @@ def parse_all_units(source: str) -> list[dict[str, Any]]:
     return rows
 
 
+def parse_graph_units(source: str) -> dict[int, dict[str, int | None]]:
+    """Read per-unit diff/G values from the machine page's graph list."""
+    match = re.search(
+        r'<ul\b[^>]*class=["\'][^"\']*\bslump_list\b[^"\']*["\'][^>]*>(.*?)</ul\s*>',
+        source,
+        re.I | re.S,
+    )
+    if not match:
+        return {}
+
+    rows: dict[int, dict[str, int | None]] = {}
+    for item in re.findall(r"<li\b[^>]*>(.*?)</li\s*>", match.group(1), re.I | re.S):
+        unit_match = re.search(r'href=["\'][^"\']*[?&]num=(\d+)[^"\']*["\']', item, re.I)
+        if not unit_match:
+            continue
+        unit = int(unit_match.group(1))
+        for table in parse_tables(item):
+            if len(table) < 2:
+                continue
+            header = [split_link(cell)[0] for cell in table[0]]
+            if not {"差枚", "G数"}.issubset(set(header)):
+                continue
+            h = header_map(header)
+            values = table[1]
+            if len(values) < len(header):
+                continue
+            rows[unit] = {
+                "diff": parse_int(values[h["差枚"]]),
+                "games": parse_int(values[h["G数"]]),
+            }
+            break
+    return rows
+
+
 def parse_machine_units(source: str, machine: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    graph_rows = parse_graph_units(source)
     for table in parse_tables(source):
         if not table:
             continue
@@ -402,12 +437,15 @@ def parse_machine_units(source: str, machine: str) -> list[dict[str, Any]]:
             unit = parse_int(split_link(row[h["台番"]])[0])
             if unit is None:
                 continue
+            graph_row = graph_rows.get(unit, {})
+            diff = parse_int(row[h["差枚"]])
+            games = parse_int(row[h["G数"]])
             rows.append(
                 {
                     "machine": machine,
                     "unit": unit,
-                    "diff": parse_int(row[h["差枚"]]),
-                    "games": parse_int(row[h["G数"]]),
+                    "diff": diff if diff is not None else graph_row.get("diff"),
+                    "games": games if games is not None else graph_row.get("games"),
                     "payout_rate": parse_percent(row[h["出率"]]) if "出率" in h else None,
                     "bb": parse_int(row[h["BB"]]),
                     "rb": parse_int(row[h["RB"]]),
