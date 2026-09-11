@@ -20,10 +20,12 @@ on:
       - main
     paths:
       - "grape_history_report.py"
+      - "latest_grape_report_impl.py"
       - "config.json"
       - ".github/workflows/grape-history.yml"
   schedule:
-    - cron: "27 0 * * *"
+    # 10:15 JST = 01:15 UTC; runs after the morning collectors.
+    - cron: "15 1 * * *"
 
 permissions:
   contents: write
