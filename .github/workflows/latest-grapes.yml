@@ -15,6 +15,7 @@ on:
       - "latest_grape_report_impl.py"
       - "latest_grape_report_overrides.py"
       - "build_site.py"
+      - "config.json"
       - ".github/workflows/latest-grapes.yml"
   schedule:
     # 08:00 / 08:30 / 09:00 / 09:30 / 09:45 JST = 23:00 / 23:30 / 00:00 / 00:30 / 00:45 UTC

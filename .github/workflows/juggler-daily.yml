@@ -20,6 +20,8 @@ on:
       - main
     paths:
       - "juggler_daily.py"
+      - "test_juggler_daily.py"
+      - "config.json"
       - ".github/workflows/juggler-daily.yml"
   schedule:
     # 07:30, 08:00, 08:30, 09:00, 09:30, 09:45 JST.
@@ -48,6 +50,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Run unit tests
+        run: python -m unittest test_juggler_daily.py
 
       - name: Collect and checkpoint history in batches
         shell: bash

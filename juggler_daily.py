@@ -1128,6 +1128,9 @@ def rule_points(hall: str, target: date, previous: dict[str, object] | None) -> 
     elif hall == "アウトバーンブリッツ" and digit in (4, 8):
         points += 3.0
         reasons.append(f"店舗ルール: {digit}の日")
+    elif hall == "ワンダーランド西新" and digit in (1, 4):
+        points += 3.0
+        reasons.append(f"店舗ルール: {digit}の日")
     return points, reasons
 
 

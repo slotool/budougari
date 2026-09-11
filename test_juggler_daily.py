@@ -176,6 +176,22 @@ class TemporalFeatureTests(unittest.TestCase):
         self.assertGreater(a_feedback["前日凹み"], b_feedback["前日凹み"])
 
 
+    def test_wonderland_nishijin_special_days(self) -> None:
+        special_days = (
+            date(2026, 9, 1),
+            date(2026, 9, 4),
+            date(2026, 9, 11),
+            date(2026, 9, 14),
+        )
+        for target in special_days:
+            points, reasons = daily.rule_points("ワンダーランド西新", target, None)
+            self.assertEqual(points, 3.0)
+            self.assertIn(f"店舗ルール: {target.day % 10}の日", reasons)
+
+        points, reasons = daily.rule_points("ワンダーランド西新", date(2026, 9, 2), None)
+        self.assertEqual(points, 0.0)
+        self.assertEqual(reasons, [])
+
 if __name__ == "__main__":
     unittest.main()
 
