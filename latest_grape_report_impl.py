@@ -153,11 +153,14 @@ class MinRepoClient:
             if url == landing_url:
                 return landing_body
 
-        body, returncode, stderr = self._run_browser_result(url)
-        if returncode != 0 or self._is_browser_challenge(body):
-            detail = " ".join(stderr[-500:].split())
-            raise RuntimeError(f"Browser fetch returned no report: {url} / exit={returncode} / {detail}")
-        return body
+        last_returncode = 0
+        last_stderr = ""
+        for _attempt in range(3):
+            body, last_returncode, last_stderr = self._run_browser_result(url)
+            if last_returncode == 0 and not self._is_browser_challenge(body):
+                return body
+        detail = " ".join(last_stderr[-500:].split())
+        raise RuntimeError(f"Browser fetch returned no report: {url} / exit={last_returncode} / {detail}")
 
     def _run_browser(self, url: str) -> str:
         body, returncode, stderr = self._run_browser_result(url)
