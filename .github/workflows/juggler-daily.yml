@@ -24,11 +24,10 @@ on:
       - "config.json"
       - ".github/workflows/juggler-daily.yml"
   schedule:
-    # 07:30, 08:00, 08:30, 09:00, 09:30, 09:45 JST.
-    # Repeated runs cover publication and GitHub scheduling delays.
+    # Run away from the latest-grapes schedule so Min-repo requests do not overlap.
+    # 07:30 / 09:15 JST = 22:30 / 00:15 UTC.
     - cron: "30 22 * * *"
-    - cron: "0,30 23 * * *"
-    - cron: "0,30,45 0 * * *"
+    - cron: "15 0 * * *"
 
 permissions:
   contents: write
@@ -96,7 +95,9 @@ jobs:
           printf 'state=running\nbatch=0\nupdated_at=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > "${status_file}"
           commit_status "Start checkpointed Juggler backfill"
 
-          for batch in $(seq 1 9); do
+          # One bounded checkpoint per run. Repeated daily runs continue the
+          # 365-day backfill without keeping one runner active for hours.
+          for batch in $(seq 1 1); do
             if [[ -f data/juggler_history.csv ]]; then
               before=$(wc -l < data/juggler_history.csv)
             else
