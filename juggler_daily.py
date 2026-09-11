@@ -384,15 +384,20 @@ def collect_missing(
 
     candidates.sort(key=lambda pair: pair[1]["date"], reverse=True)
     added = 0
+    empty_attempts_by_hall: dict[str, int] = {}
     for hall, latest in candidates:
         if added >= max_new_reports:
             break
+        hall_name = hall["name"]
+        if empty_attempts_by_hall.get(hall_name, 0) >= 3:
+            continue
         try:
             result = collect_summary_report(client, hall, latest)
         except RuntimeError as exc:
             if "ジャグラー行が0件です" not in str(exc):
                 raise
-            print(f"skip empty Juggler report: {hall['name']} {latest['date']} {latest['url']}")
+            empty_attempts_by_hall[hall_name] = empty_attempts_by_hall.get(hall_name, 0) + 1
+            print(f"skip empty Juggler report: {hall_name} {latest['date']} {latest['url']}")
             continue
         add_collected_result(rows, result)
         added += 1
