@@ -199,6 +199,19 @@ class TemporalFeatureTests(unittest.TestCase):
         self.assertTrue(client._is_browser_challenge("<script>action=w_scd_n&_ajax_nonce=abc123</script>"))
         self.assertFalse(client._is_browser_challenge("<html><body><table><tr><td>408</td></tr></table></body></html>"))
 
+    def test_minrepo_browser_authentication_retries_empty_landing(self) -> None:
+        client = daily.report.MinRepoClient(0)
+        client.browser_path = "chrome"
+        client.browser_profile = type("Profile", (), {"name": "unused"})()
+        landing_results = iter(["", "<html><body>report</body></html>"])
+        client._run_browser = lambda _url: next(landing_results)
+        client._run_browser_result = lambda _url: ("<html><body>table</body></html>", 0, "")
+
+        body = client._browser_fetch("https://min-repo.com/123/?kishu=all")
+
+        self.assertIn("table", body)
+        self.assertTrue(client.browser_profile_ready)
+
 if __name__ == "__main__":
     unittest.main()
 
