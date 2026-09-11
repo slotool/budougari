@@ -5,7 +5,11 @@ import csv
 import html
 import json
 import math
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone, timedelta
@@ -21,6 +25,11 @@ BASE_URL = "https://min-repo.com"
 JST = timezone(timedelta(hours=9))
 REPLAY_DENOM = 7.298
 WEEKDAY_INDEX = {"月": 0, "火": 1, "水": 2, "木": 3, "金": 4, "土": 5, "日": 6}
+BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/140.0.0.0 Safari/537.36"
+)
 
 
 @dataclass(frozen=True)
@@ -101,29 +110,137 @@ class MinRepoClient:
         self.opener = build_opener()
         self.cookies: dict[str, str] = {}
         self.last_fetch = 0.0
+        self.browser_path: str | None = None
+        self.browser_profile: tempfile.TemporaryDirectory[str] | None = None
+        self.browser_profile_ready = False
+        self.browser_report_mode = False
 
     def fetch(self, url: str) -> str:
+        if self.browser_report_mode and self._is_report_url(url):
+            return self._browser_fetch(url)
+        body = self._request(Request(url, headers=self._headers()))
+        for name, value in re.findall(r"\$\.cookie\('(_d2|_d_a2)',\s*'([^']+)'", body):
+            self.cookies[name] = value
+        if self._is_report_url(url) and self._is_browser_challenge(body):
+            self.browser_report_mode = True
+            return self._browser_fetch(url)
+        return body
+
+    @staticmethod
+    def _is_report_url(url: str) -> bool:
+        first_path = urlparse(url).path.strip("/").split("/", 1)[0]
+        return first_path.isdigit()
+
+    @staticmethod
+    def _is_browser_challenge(body: str) -> bool:
+        if not body.strip() or "action=w_scd_n&_ajax_nonce=" in body:
+            return True
+        visible = re.sub(r"<[^>]+>", "", body).strip()
+        return not visible
+
+    def _browser_fetch(self, url: str) -> str:
+        if self.browser_path is None:
+            self.browser_path = self._find_browser()
+        if self.browser_profile is None:
+            self.browser_profile = tempfile.TemporaryDirectory(prefix="minrepo-browser-")
+
+        landing_url = url.split("?", 1)[0]
+        if not self.browser_profile_ready:
+            landing_body = self._run_browser(landing_url)
+            if self._is_browser_challenge(landing_body):
+                raise RuntimeError(f"Browser authentication failed: {landing_url}")
+            self.browser_profile_ready = True
+            if url == landing_url:
+                return landing_body
+
+        body, returncode, stderr = self._run_browser_result(url)
+        if returncode != 0 or self._is_browser_challenge(body):
+            detail = " ".join(stderr[-500:].split())
+            raise RuntimeError(f"Browser fetch returned no report: {url} / exit={returncode} / {detail}")
+        return body
+
+    def _run_browser(self, url: str) -> str:
+        body, returncode, stderr = self._run_browser_result(url)
+        if returncode != 0:
+            detail = " ".join(stderr[-500:].split())
+            raise RuntimeError(f"Browser fetch failed: {url} / exit={returncode} / {detail}")
+        return body
+
+    def _run_browser_result(self, url: str) -> tuple[str, int, str]:
+        assert self.browser_path is not None
+        assert self.browser_profile is not None
+
+        self._wait_for_delay()
+        command = [
+            self.browser_path,
+            "--headless=new",
+            "--disable-gpu",
+            "--disable-blink-features=AutomationControlled",
+            "--no-first-run",
+            "--no-default-browser-check",
+            f"--user-data-dir={self.browser_profile.name}",
+            f"--user-agent={BROWSER_UA}",
+            "--virtual-time-budget=15000",
+            "--dump-dom",
+            url,
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=90,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError(f"Browser fetch failed: {url}: {exc}") from exc
+        finally:
+            self.last_fetch = time.monotonic()
+        return completed.stdout, completed.returncode, completed.stderr
+
+    @staticmethod
+    def _find_browser() -> str:
+        candidates = [
+            os.environ.get("MINREPO_BROWSER"),
+            shutil.which("google-chrome"),
+            shutil.which("google-chrome-stable"),
+            shutil.which("chrome"),
+            shutil.which("chromium"),
+            shutil.which("chromium-browser"),
+            shutil.which("msedge"),
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        ]
+        for candidate in candidates:
+            if candidate and Path(candidate).is_file():
+                return str(candidate)
+        raise RuntimeError("Chrome/Chromiumが見つからないため、みんレポのブラウザ認証を実行できません")
+
+    def _wait_for_delay(self) -> None:
         elapsed = time.monotonic() - self.last_fetch
         if self.last_fetch and elapsed < self.delay_seconds:
             time.sleep(self.delay_seconds - elapsed)
-        req = Request(url, headers=self._headers())
+
+    def _request(self, req: Request) -> str:
+        self._wait_for_delay()
         try:
             with self.opener.open(req, timeout=30) as res:
                 body = res.read().decode("utf-8", errors="replace")
         except HTTPError as exc:
-            raise RuntimeError(f"HTTP {exc.code}: {url}") from exc
+            raise RuntimeError(f"HTTP {exc.code}: {req.full_url}") from exc
         except URLError as exc:
-            raise RuntimeError(f"Fetch failed: {url}: {exc}") from exc
-        self.last_fetch = time.monotonic()
-
-        for name, value in re.findall(r"\$\.cookie\('(_d2|_d_a2)',\s*'([^']+)'", body):
-            self.cookies[name] = value
+            raise RuntimeError(f"Fetch failed: {req.full_url}: {exc}") from exc
+        finally:
+            self.last_fetch = time.monotonic()
         return body
 
     def _headers(self) -> dict[str, str]:
         headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Accept-Language": "ja",
+            "User-Agent": BROWSER_UA,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "ja,en-US;q=0.8,en;q=0.6",
         }
         if self.cookies:
             headers["Cookie"] = "; ".join(f"{name}={value}" for name, value in self.cookies.items())
