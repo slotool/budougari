@@ -321,10 +321,16 @@ def collect_hall_resilient(
                 sample = ", ".join(
                     f"{row['machine']}#{row['unit']}" for row in missing_diff[:8]
                 )
-                raise RuntimeError(
-                    "最新掲載日の差枚が未反映のため、既存レポートを更新しません: "
-                    f"{hall['name']} {latest['date']} count={len(missing_diff)} sample={sample}"
+                reason = (
+                    f"{latest['date']} {latest['url']} "
+                    f"missing_diff={len(missing_diff)} sample={sample}"
                 )
+                tried.append(reason)
+                print(
+                    "差枚未反映の掲載日をスキップして前の完全掲載日を確認します: "
+                    f"{hall['name']} {reason}"
+                )
+                continue
             return result
         tried.append(f"{latest['date']} {latest['url']}")
 
@@ -340,4 +346,6 @@ report.grade_grape = setting_grade
 report.estimate_grape = estimate_grape_by_play_levels
 report.PLAY_LEVEL_NAME = PLAY_LEVEL_NAME
 report.write_outputs = lambda results: write_outputs_with_grade(report, results)
-report.main()
+
+if __name__ == "__main__":
+    report.main()
