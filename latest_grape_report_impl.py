@@ -25,10 +25,13 @@ BASE_URL = "https://min-repo.com"
 JST = timezone(timedelta(hours=9))
 REPLAY_DENOM = 7.298
 WEEKDAY_INDEX = {"月": 0, "火": 1, "水": 2, "木": 3, "金": 4, "土": 5, "日": 6}
-BROWSER_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/140.0.0.0 Safari/537.36"
+BROWSER_UA = os.environ.get(
+    "MINREPO_USER_AGENT",
+    (
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 "
+        "Mobile/15E148 Safari/604.1"
+    ),
 )
 
 
@@ -119,8 +122,15 @@ class MinRepoClient:
         if self.browser_report_mode and self._is_report_url(url):
             return self._browser_fetch(url)
         body = self._request(Request(url, headers=self._headers()))
+        added_auth_cookie = False
         for name, value in re.findall(r"\$\.cookie\('(_d2|_d_a2)',\s*'([^']+)'", body):
+            if name not in self.cookies:
+                added_auth_cookie = True
             self.cookies[name] = value
+        if self._is_report_url(url) and added_auth_cookie:
+            body = self._request(Request(url, headers=self._headers()))
+            for name, value in re.findall(r"\$\.cookie\('(_d2|_d_a2)',\s*'([^']+)'", body):
+                self.cookies[name] = value
         if self._is_report_url(url) and self._is_browser_challenge(body):
             self.browser_report_mode = True
             return self._browser_fetch(url)
@@ -185,6 +195,7 @@ class MinRepoClient:
             "--disable-blink-features=AutomationControlled",
             "--no-first-run",
             "--no-default-browser-check",
+            "--window-size=390,844",
             f"--user-data-dir={self.browser_profile.name}",
             f"--user-agent={BROWSER_UA}",
             "--virtual-time-budget=15000",
@@ -380,6 +391,11 @@ def parse_all_units(source: str) -> list[dict[str, Any]]:
                         "diff": parse_int(row[h["差枚"]]),
                         "games": parse_int(row[h["G数"]]),
                         "payout_rate": parse_percent(row[h["出率"]]) if "出率" in h else None,
+                        "bb": parse_int(row[h["BB"]]) if "BB" in h else None,
+                        "rb": parse_int(row[h["RB"]]) if "RB" in h else None,
+                        "combined_rate": parse_rate(row[h["合成"]]) if "合成" in h else None,
+                        "bb_rate": parse_rate(row[h["BB率"]]) if "BB率" in h else None,
+                        "rb_rate": parse_rate(row[h["RB率"]]) if "RB率" in h else None,
                         "source": "all",
                     }
                 )

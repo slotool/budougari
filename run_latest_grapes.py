@@ -239,6 +239,40 @@ def extract_juggler_machines(source: str, latest_id: str) -> list[str]:
     return sorted(machines)
 
 
+def parse_individual_unit(source: str, machine: str, unit: int) -> dict[str, object] | None:
+    result: dict[str, object] = {"machine": machine, "unit": unit, "source": "unit"}
+    found = False
+    for table in report.parse_tables(source):
+        if len(table) < 2:
+            continue
+        header = [report.split_link(cell)[0] for cell in table[0]]
+        values = table[1]
+        if len(values) < len(header):
+            continue
+        h = report.header_map(header)
+        if {"機種", "差枚", "G数"}.issubset(h):
+            result.update(
+                {
+                    "machine": report.split_link(values[h["機種"]])[0] or machine,
+                    "diff": report.parse_int(values[h["差枚"]]),
+                    "games": report.parse_int(values[h["G数"]]),
+                    "payout_rate": report.parse_percent(values[h["出率"]]) if "出率" in h else None,
+                }
+            )
+            found = True
+        elif {"BB", "RB"}.issubset(h):
+            result.update(
+                {
+                    "bb": report.parse_int(values[h["BB"]]),
+                    "rb": report.parse_int(values[h["RB"]]),
+                    "combined_rate": report.parse_rate(values[h["合成"]]) if "合成" in h else None,
+                    "bb_rate": report.parse_rate(values[h["BB率"]]) if "BB率" in h else None,
+                    "rb_rate": report.parse_rate(values[h["RB率"]]) if "RB率" in h else None,
+                }
+            )
+    return result if found else None
+
+
 def report_candidates_resilient(
     source: str,
     tag_url: str,
@@ -276,15 +310,38 @@ def collect_hall_candidate(
     all_html = client.fetch(f"{report_url}?kishu=all&sort=num")
     all_rows = report.parse_all_units(all_html) if all_html.strip() else []
     by_key: dict[tuple[str, int], dict[str, object]] = {(r["machine"], r["unit"]): r for r in all_rows}
-    machines = sorted({str(r["machine"]) for r in all_rows})
+    machines = sorted({
+        str(row["machine"])
+        for row in all_rows
+        if (
+            not isinstance(row.get("games"), int)
+            or (
+                row["games"] > 0
+                and any(not isinstance(row.get(key), int) for key in ("diff", "bb", "rb"))
+            )
+        )
+    })
 
-    if not machines:
+    if not all_rows:
         top_html = client.fetch(report_url)
         machines = extract_juggler_machines(top_html, latest_id)
 
+    machine_client = report.MinRepoClient(delay_seconds=client.delay_seconds)
     for machine in machines:
         machine_url = f"{report.BASE_URL}/{latest_id}/?kishu={report.quote(machine)}"
-        machine_html = client.fetch(machine_url)
+        try:
+            machine_html = machine_client.fetch(machine_url)
+        except RuntimeError as first_exc:
+            print(f"機種別ページを新しいセッションで再取得します: {machine_url} / {first_exc}")
+            machine_client = report.MinRepoClient(delay_seconds=client.delay_seconds)
+            try:
+                machine_html = machine_client.fetch(machine_url)
+            except RuntimeError as second_exc:
+                print(
+                    "機種別ページを取得できないため全台一覧の値を維持します: "
+                    f"{machine_url} / {second_exc}"
+                )
+                continue
         if not machine_html.strip():
             continue
         for row in report.parse_machine_units(machine_html, machine):
@@ -292,6 +349,34 @@ def collect_hall_candidate(
             merged = by_key.get(key, {"machine": row["machine"], "unit": row["unit"]})
             merged.update({k: v for k, v in row.items() if v is not None})
             by_key[key] = merged
+
+    unresolved = sorted(
+        (
+            row for row in by_key.values()
+            if isinstance(row.get("games"), int)
+            and row["games"] > 0
+            and not isinstance(row.get("diff"), int)
+        ),
+        key=lambda row: (str(row["machine"]), int(row["unit"])),
+    )
+    for index, row in enumerate(unresolved, start=1):
+        unit = int(row["unit"])
+        unit_url = f"{report.BASE_URL}/{latest_id}/?num={unit}"
+        try:
+            unit_html = machine_client.fetch(unit_url)
+        except RuntimeError as first_exc:
+            print(f"台個別ページを新しいセッションで再取得します: {unit_url} / {first_exc}")
+            machine_client = report.MinRepoClient(delay_seconds=client.delay_seconds)
+            try:
+                unit_html = machine_client.fetch(unit_url)
+            except RuntimeError as second_exc:
+                print(f"台個別ページを取得できませんでした: {unit_url} / {second_exc}")
+                continue
+        unit_row = parse_individual_unit(unit_html, str(row["machine"]), unit)
+        if unit_row:
+            row.update({key: value for key, value in unit_row.items() if value is not None})
+        if index % 10 == 0 or index == len(unresolved):
+            print(f"負け台の個別差枚を補完中: {hall['name']} {index}/{len(unresolved)}")
 
     rows: list[dict[str, object]] = []
     for row in by_key.values():
