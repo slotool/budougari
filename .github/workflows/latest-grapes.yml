@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - main
+    # Parser or workflow changes refresh both the report and GitHub Pages.
     paths:
       - "run_latest_grapes.py"
       - "latest_grape_report_impl.py"
