@@ -242,17 +242,26 @@ class MinRepoClient:
             time.sleep(self.delay_seconds - elapsed)
 
     def _request(self, req: Request) -> str:
-        self._wait_for_delay()
-        try:
-            with self.opener.open(req, timeout=30) as res:
-                body = res.read().decode("utf-8", errors="replace")
-        except HTTPError as exc:
-            raise RuntimeError(f"HTTP {exc.code}: {req.full_url}") from exc
-        except URLError as exc:
-            raise RuntimeError(f"Fetch failed: {req.full_url}: {exc}") from exc
-        finally:
-            self.last_fetch = time.monotonic()
-        return body
+        retryable_statuses = {429, 500, 502, 503, 504}
+        for attempt in range(3):
+            self._wait_for_delay()
+            try:
+                with self.opener.open(req, timeout=30) as res:
+                    return res.read().decode("utf-8", errors="replace")
+            except HTTPError as exc:
+                if exc.code not in retryable_statuses or attempt == 2:
+                    raise RuntimeError(f"HTTP {exc.code}: {req.full_url}") from exc
+                print(
+                    f"HTTP {exc.code} のため再試行します "
+                    f"({attempt + 1}/2): {req.full_url}"
+                )
+            except URLError as exc:
+                if attempt == 2:
+                    raise RuntimeError(f"Fetch failed: {req.full_url}: {exc}") from exc
+                print(f"通信エラーのため再試行します ({attempt + 1}/2): {req.full_url}")
+            finally:
+                self.last_fetch = time.monotonic()
+        raise RuntimeError(f"Fetch failed after retries: {req.full_url}")
 
     def _headers(self) -> dict[str, str]:
         headers = {
