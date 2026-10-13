@@ -45,6 +45,8 @@ AUTO_MAX_POINTS = 8.0
 AUTO_SINGLE_QUANTILES = (0.15, 0.30, 0.70, 0.85)
 AUTO_RECENT_DAYS = 120
 AUTO_RECENT_MIN_COUNT = 12
+HIT_MIN_GAMES = 2000
+HIT_MIN_DIFF = 1000
 AUTO_CONTEXT_GROUPS = frozenset({"weekday", "date_digit", "unit_tail"})
 AUTO_HISTORY_GROUP_PAIRS = frozenset({
     frozenset(("lag_state", "rolling_state")),
@@ -126,10 +128,7 @@ def payout_rate(games: int, diff: int, supplied: object = None) -> float:
 
 
 def is_hit(games: int, diff: int, bb: int | None = None, rb: int | None = None) -> int:
-    # Low activity is retained as a miss instead of being discarded.
-    if games < 100:
-        return 0
-    return int(diff >= 500)
+    return int(games >= HIT_MIN_GAMES and diff >= HIT_MIN_DIFF)
 
 
 def normalize(raw: dict[str, object], collected_at: str | None = None) -> dict[str, object]:
@@ -1306,7 +1305,7 @@ def evaluate_predictions(
         row: dict[str, object] = dict(old)
         key = (old["hall"], old["prediction_date"], old["machine"], old["unit"])
         result = actual.get(key)
-        if result and old.get("result_hit", "") == "":
+        if result:
             row.update({
                 "result_games": result["games"], "result_diff": result["diff"],
                 "result_bb": result["bb"], "result_rb": result["rb"],
@@ -1360,7 +1359,7 @@ def render_analysis(rows: list[dict[str, object]], added: int) -> str:
         f"生成日時: {datetime.now(JST).strftime('%Y-%m-%d %H:%M:%S JST')}", "",
         f"対象期間: {min(dates).isoformat()}～{max(dates).isoformat()} / {len(rows):,}台分",
         f"学習済み: {len(rows):,}台 / {len(learned_hall_dates):,}店舗日",
-        "当たり定義: 100G未満は0。100G以上で差枚+500以上。全期間で同じ基準を使います。",
+        f"当たり定義: {HIT_MIN_GAMES:,}G以上かつ差枚+{HIT_MIN_DIFF:,}枚以上。全期間で同じ基準を使います。",
         "0Gは差枚0・出率100%。低稼働も削除せずDBに保存します。設定を断定する指標ではありません。", "",
     ]
     for hall in halls:

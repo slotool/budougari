@@ -18,11 +18,16 @@ def sample_row(day: date, unit: int, diff: int) -> dict[str, object]:
         "diff": diff,
         "bb": 10,
         "rb": 10,
-        "hit": int(diff >= 500),
+        "hit": daily.is_hit(3000, diff),
     }
 
 
 class TemporalFeatureTests(unittest.TestCase):
+    def test_hit_requires_games_and_diff_thresholds(self) -> None:
+        self.assertEqual(daily.is_hit(1999, 1000), 0)
+        self.assertEqual(daily.is_hit(2000, 999), 0)
+        self.assertEqual(daily.is_hit(2000, 1000), 1)
+
     def test_current_outcome_does_not_change_prior_features(self) -> None:
         start = date(2026, 1, 1)
         history = [sample_row(start + timedelta(days=i), 1, -700 + i * 50) for i in range(14)]
