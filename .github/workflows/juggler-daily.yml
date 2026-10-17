@@ -97,7 +97,7 @@ jobs:
 
           # Catch up in bounded checkpoints. Existing hall-date reports are
           # skipped, so each batch adds only data that is still missing.
-          for batch in $(seq 1 6); do
+          for batch in $(seq 1 8); do
             if [[ -f data/juggler_history.csv ]]; then
               before=$(wc -l < data/juggler_history.csv)
             else
