@@ -197,6 +197,16 @@ class TemporalFeatureTests(unittest.TestCase):
         self.assertEqual(points, 0.0)
         self.assertEqual(reasons, [])
 
+    def test_plaza_nagahama_special_days(self) -> None:
+        for target in (date(2026, 10, 4), date(2026, 10, 7), date(2026, 10, 14), date(2026, 10, 17)):
+            points, reasons = daily.rule_points("プラザ長浜", target, None)
+            self.assertEqual(points, 3.0)
+            self.assertIn(f"店舗ルール: {target.day % 10}の日", reasons)
+
+        points, reasons = daily.rule_points("プラザ長浜", date(2026, 10, 5), None)
+        self.assertEqual(points, 0.0)
+        self.assertEqual(reasons, [])
+
     def test_minrepo_browser_challenge_detection(self) -> None:
         client = daily.report.MinRepoClient(5)
         self.assertTrue(client._is_browser_challenge(""))
