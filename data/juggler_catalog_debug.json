@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-18T02:37:42.087799+09:00",
+  "generated_at": "2026-10-18T02:51:07.868722+09:00",
   "halls": [
     {
       "hall": "パーラーゾーン姪浜",
@@ -31,7 +31,7 @@
       "listed_reports": 349,
       "oldest": "2025-10-18",
       "newest": "2026-10-17",
-      "missing_reports": 150
+      "missing_reports": 100
     }
   ]
 }
