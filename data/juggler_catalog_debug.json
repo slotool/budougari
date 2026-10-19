@@ -1,37 +1,77 @@
 {
-  "generated_at": "2026-10-18T13:42:24.762050+09:00",
+  "generated_at": "2026-10-19T09:23:52.525025+09:00",
   "halls": [
     {
       "hall": "パーラーゾーン姪浜",
-      "source": "cache",
+      "tag_id": 4897,
+      "body_classes": [
+        "archive",
+        "tag",
+        "tag-4897",
+        "wp-theme-minrepo"
+      ],
+      "api_page_sizes": [
+        400,
+        400
+      ],
       "listed_reports": 348,
-      "oldest": "2025-10-18",
-      "newest": "2026-10-17",
-      "missing_reports": 0
+      "oldest": "2025-10-19",
+      "newest": "2026-10-18",
+      "missing_reports": 1
     },
     {
       "hall": "アウトバーンブリッツ",
-      "source": "cache",
-      "listed_reports": 352,
-      "oldest": "2025-10-18",
-      "newest": "2026-10-16",
-      "missing_reports": 0
+      "tag_id": 4382,
+      "body_classes": [
+        "archive",
+        "tag",
+        "tag-4382",
+        "wp-theme-minrepo"
+      ],
+      "api_page_sizes": [
+        400,
+        400
+      ],
+      "listed_reports": 353,
+      "oldest": "2025-10-19",
+      "newest": "2026-10-18",
+      "missing_reports": 1
     },
     {
       "hall": "ワンダーランド西新",
-      "source": "cache",
-      "listed_reports": 335,
+      "tag_id": 914,
+      "body_classes": [
+        "archive",
+        "tag",
+        "tag-914",
+        "wp-theme-minrepo"
+      ],
+      "api_page_sizes": [
+        400,
+        400
+      ],
+      "listed_reports": 337,
       "oldest": "2025-11-01",
-      "newest": "2026-10-16",
-      "missing_reports": 0
+      "newest": "2026-10-18",
+      "missing_reports": 1
     },
     {
       "hall": "プラザ長浜",
-      "source": "cache",
+      "tag_id": 1871,
+      "body_classes": [
+        "archive",
+        "tag",
+        "tag-1871",
+        "wp-theme-minrepo"
+      ],
+      "api_page_sizes": [
+        400,
+        400
+      ],
       "listed_reports": 349,
-      "oldest": "2025-10-18",
-      "newest": "2026-10-17",
-      "missing_reports": 0
+      "oldest": "2025-10-19",
+      "newest": "2026-10-18",
+      "missing_reports": 1
     }
   ]
 }
