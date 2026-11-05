@@ -1,9 +1,19 @@
 {
-  "generated_at": "2026-11-04T15:32:42.986594+09:00",
+  "generated_at": "2026-11-05T11:42:11.172204+09:00",
   "halls": [
     {
       "hall": "パーラーゾーン姪浜",
-      "source": "cache",
+      "tag_id": 4897,
+      "body_classes": [
+        "archive",
+        "tag",
+        "tag-4897",
+        "wp-theme-minrepo"
+      ],
+      "api_page_sizes": [
+        400,
+        400
+      ],
       "listed_reports": 349,
       "oldest": "2025-11-05",
       "newest": "2026-11-03",
@@ -11,27 +21,57 @@
     },
     {
       "hall": "アウトバーンブリッツ",
-      "source": "cache",
+      "tag_id": 4382,
+      "body_classes": [
+        "archive",
+        "tag",
+        "tag-4382",
+        "wp-theme-minrepo"
+      ],
+      "api_page_sizes": [
+        400,
+        400
+      ],
       "listed_reports": 354,
-      "oldest": "2025-11-04",
-      "newest": "2026-11-03",
-      "missing_reports": 0
+      "oldest": "2025-11-05",
+      "newest": "2026-11-04",
+      "missing_reports": 1
     },
     {
       "hall": "ワンダーランド西新",
-      "source": "cache",
+      "tag_id": 914,
+      "body_classes": [
+        "archive",
+        "tag",
+        "tag-914",
+        "wp-theme-minrepo"
+      ],
+      "api_page_sizes": [
+        400,
+        400
+      ],
       "listed_reports": 348,
-      "oldest": "2025-11-04",
-      "newest": "2026-11-03",
-      "missing_reports": 0
+      "oldest": "2025-11-06",
+      "newest": "2026-11-04",
+      "missing_reports": 1
     },
     {
       "hall": "プラザ長浜",
-      "source": "cache",
+      "tag_id": 1871,
+      "body_classes": [
+        "archive",
+        "tag",
+        "tag-1871",
+        "wp-theme-minrepo"
+      ],
+      "api_page_sizes": [
+        400,
+        400
+      ],
       "listed_reports": 349,
-      "oldest": "2025-11-04",
-      "newest": "2026-11-03",
-      "missing_reports": 0
+      "oldest": "2025-11-06",
+      "newest": "2026-11-04",
+      "missing_reports": 1
     }
   ]
 }
