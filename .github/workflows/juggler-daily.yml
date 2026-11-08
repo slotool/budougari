@@ -22,12 +22,13 @@ on:
       - "juggler_daily.py"
       - "test_juggler_daily.py"
       - "config.json"
-      - ".github/workflows/juggler-daily.yml"
   schedule:
-    # Run away from the latest-grapes schedule so Min-repo requests do not overlap.
-    # 07:30 / 09:15 JST = 22:30 / 00:15 UTC.
-    - cron: "30 22 * * *"
-    - cron: "15 0 * * *"
+    # Keep a 30-minute offset from latest-grapes. GitHub may delay scheduled
+    # jobs by several hours, so start early enough to finish before 10 JST.
+    # 01:37 / 04:37 / 07:37 JST = 16:37 / 19:37 / 22:37 UTC (previous day).
+    - cron: "37 16 * * *"
+    - cron: "37 19 * * *"
+    - cron: "37 22 * * *"
 
 permissions:
   contents: write

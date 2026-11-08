@@ -18,14 +18,13 @@ on:
       - "test_latest_grape_report.py"
       - "build_site.py"
       - "config.json"
-      - ".github/workflows/latest-grapes.yml"
   schedule:
-    # 08:00 / 08:30 / 09:00 / 09:30 / 09:45 JST = 23:00 / 23:30 / 00:00 / 00:30 / 00:45 UTC
-    - cron: "0 23 * * *"
-    - cron: "30 23 * * *"
-    - cron: "0 0 * * *"
-    - cron: "30 0 * * *"
-    - cron: "45 0 * * *"
+    # GitHub may delay scheduled jobs by several hours. Start early and avoid
+    # crowded hour boundaries so at least one refresh can finish before 10 JST.
+    # 01:07 / 04:07 / 07:07 JST = 16:07 / 19:07 / 22:07 UTC (previous day).
+    - cron: "7 16 * * *"
+    - cron: "7 19 * * *"
+    - cron: "7 22 * * *"
 
 permissions:
   contents: write
