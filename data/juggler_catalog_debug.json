@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-08T10:26:21.803365+09:00",
+  "generated_at": "2026-11-09T08:08:23.695736+09:00",
   "halls": [
     {
       "hall": "パーラーゾーン姪浜",
@@ -15,8 +15,8 @@
         400
       ],
       "listed_reports": 349,
-      "oldest": "2025-11-08",
-      "newest": "2026-11-07",
+      "oldest": "2025-11-09",
+      "newest": "2026-11-08",
       "missing_reports": 0
     },
     {
@@ -33,8 +33,8 @@
         400
       ],
       "listed_reports": 354,
-      "oldest": "2025-11-08",
-      "newest": "2026-11-07",
+      "oldest": "2025-11-09",
+      "newest": "2026-11-08",
       "missing_reports": 0
     },
     {
@@ -51,8 +51,8 @@
         400
       ],
       "listed_reports": 349,
-      "oldest": "2025-11-08",
-      "newest": "2026-11-07",
+      "oldest": "2025-11-09",
+      "newest": "2026-11-08",
       "missing_reports": 0
     },
     {
@@ -69,8 +69,8 @@
         400
       ],
       "listed_reports": 350,
-      "oldest": "2025-11-08",
-      "newest": "2026-11-07",
+      "oldest": "2025-11-09",
+      "newest": "2026-11-08",
       "missing_reports": 0
     }
   ]
